@@ -1,0 +1,95 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: transfer-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ministack:
+    image: ministackorg/ministack:latest
+    container_name: transfer-ministack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "127.0.0.1", "4566" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  ministack-setup:
+    image: amazon/aws-cli:latest
+    container_name: transfer-ministack-setup
+    depends_on:
+      ministack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+        aws --endpoint-url=http://ministack:4566 sqs create-queue --queue-name bacen-events-dlq &&
+        aws --endpoint-url=http://ministack:4566 sqs create-queue --queue-name bacen-events --attributes '{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"arn:aws:sqs:us-east-1:000000000000:bacen-events-dlq\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}'
+      "
+
+  cadastro-mock:
+    image: wiremock/wiremock:3.13.0
+    container_name: transfer-cadastro-mock
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./mocks/cadastro/mappings:/home/wiremock/mappings
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/__admin/health" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  bacen-mock:
+    image: wiremock/wiremock:3.13.0
+    container_name: transfer-bacen-mock
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./mocks/bacen/mappings:/home/wiremock/mappings
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/__admin/health" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: transfer-app
+    depends_on:
+      redis:
+        condition: service_healthy
+      ministack-setup:
+        condition: service_completed_successfully
+      cadastro-mock:
+        condition: service_healthy
+      bacen-mock:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - AWS_ENDPOINT_URL=http://ministack:4566
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY=test
+      - AWS_SECRET_KEY=test
+      - AWS_SQS_QUEUE_URL=http://ministack:4566/000000000000/bacen-events
+      - CADASTRO_API_URL=http://cadastro-mock:8080
+      - BACEN_API_URL=http://bacen-mock:8080
+      - SPRING_JPA_DEFER_DATASOURCE_INITIALIZATION=true
+      - MANAGEMENT_ZIPKIN_TRACING_EXPORT_ENABLED=false
