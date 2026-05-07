@@ -9,5 +9,4 @@ class TransferApplicationTests {
 	@Test
 	void contextLoads() {
 	}
-
 }
