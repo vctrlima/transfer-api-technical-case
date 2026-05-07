@@ -34,6 +34,14 @@ public class ValidateAccountStep implements SagaStep<SagaContext> {
             throw new InsufficientBalanceException(origin.getBalance(), context.getAmount());
         }
 
+        Account destination = accountRepository
+                .findById(context.getDestinationAccountId())
+                .orElseThrow(() -> new EntityNotFoundException("Destination account not found: " + context.getDestinationAccountId()));
+
+        if (!destination.isActive()) {
+            throw new AccountInactiveException(context.getDestinationAccountId());
+        }
+
         log.info("[SAGA][Step2:ValidateAccount] Validação aprovada para transferId={}", context.getTransferId());
     }
 

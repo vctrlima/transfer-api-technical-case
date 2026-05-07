@@ -62,8 +62,10 @@ class TransferSagaOrchestratorTest {
     }
 
     @Test
-    @DisplayName("falha na Etapa 1 (FetchCustomer) → propagar exceção, nenhuma etapa posterior executada")
-    void givenFetchCustomerFails_whenExecute_thenThrowsAndNoSubsequentStepsRun() {
+    @DisplayName("falha na Etapa 3 (FetchCustomer) → propagar exceção, compensar ValidateLimit, etapas 4 e 5 não executadas")
+    void givenFetchCustomerFails_whenExecute_thenThrowsAndCompensatesLimit() {
+        doNothing().when(validateAccountStep).execute(any());
+        doNothing().when(validateLimitStep).execute(any());
         doThrow(new ExternalServiceException("Cadastro unavailable"))
                 .when(fetchCustomerStep).execute(any());
 
@@ -71,16 +73,19 @@ class TransferSagaOrchestratorTest {
                 .isInstanceOf(ExternalServiceException.class)
                 .hasMessageContaining("Cadastro unavailable");
 
+        verify(validateAccountStep).execute(any());
+        verify(validateLimitStep).execute(any());
         verify(fetchCustomerStep).execute(any());
-        verifyNoInteractions(validateAccountStep, validateLimitStep, executeTransferStep, publishBacenEventStep);
+        verify(validateLimitStep).compensate(any());
+        verifyNoInteractions(executeTransferStep, publishBacenEventStep);
     }
 
     @Test
     @DisplayName("falha na Etapa 4 (ExecuteTransfer) antes do débito → nenhuma compensação disparada")
     void givenExecuteTransferFailsBeforeDebit_whenExecute_thenNoCompensation() {
-        doNothing().when(fetchCustomerStep).execute(any());
         doNothing().when(validateAccountStep).execute(any());
         doNothing().when(validateLimitStep).execute(any());
+        doNothing().when(fetchCustomerStep).execute(any());
 
         doThrow(new RuntimeException("DB connection error"))
                 .when(executeTransferStep).execute(any());
@@ -93,11 +98,11 @@ class TransferSagaOrchestratorTest {
     }
 
     @Test
-    @DisplayName("falha na Etapa 4 (PublishBacenEvent) após débito → compensações executadas, status = ROLLED_BACK")
+    @DisplayName("falha na Etapa 5 (PublishBacenEvent) após débito → compensações executadas, status = ROLLED_BACK")
     void givenPublishBacenEventFails_whenExecute_thenCompensateAndRollback() {
-        doNothing().when(fetchCustomerStep).execute(any());
         doNothing().when(validateAccountStep).execute(any());
         doNothing().when(validateLimitStep).execute(any());
+        doNothing().when(fetchCustomerStep).execute(any());
 
         doAnswer(invocation -> {
             SagaContext ctx = invocation.getArgument(0);
@@ -113,7 +118,6 @@ class TransferSagaOrchestratorTest {
                 .hasMessageContaining("rolled back");
 
         verify(executeTransferStep).compensate(any());
-
         verify(validateLimitStep).compensate(any());
 
         ArgumentCaptor<Transfer> transferCaptor = ArgumentCaptor.forClass(Transfer.class);
@@ -130,9 +134,9 @@ class TransferSagaOrchestratorTest {
     @Test
     @DisplayName("fluxo feliz → status = PROCESSING, nenhuma compensação")
     void givenAllStepsSucceed_whenExecute_thenReturnsProcessingTransfer() {
-        doNothing().when(fetchCustomerStep).execute(any());
         doNothing().when(validateAccountStep).execute(any());
         doNothing().when(validateLimitStep).execute(any());
+        doNothing().when(fetchCustomerStep).execute(any());
         doAnswer(inv -> {
             SagaContext ctx = inv.getArgument(0);
             ctx.setTransferExecuted(true);

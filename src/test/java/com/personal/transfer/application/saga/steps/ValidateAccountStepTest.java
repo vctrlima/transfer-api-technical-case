@@ -63,7 +63,15 @@ class ValidateAccountStepTest {
         void givenActiveAccount_whenExecute_thenNoException() {
             context.setAmount(new BigDecimal("100.00"));
             Account account = buildAccount(AccountStatus.ACTIVE, new BigDecimal("500.00"));
+            Account destination = Account.builder()
+                    .id("acc-002")
+                    .status(AccountStatus.ACTIVE)
+                    .balance(new BigDecimal("100.00"))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
+            when(accountRepository.findById("acc-002")).thenReturn(Optional.of(destination));
 
             assertThatCode(() -> validateAccountStep.execute(context)).doesNotThrowAnyException();
         }
@@ -81,10 +89,48 @@ class ValidateAccountStepTest {
 
         @Test
         @DisplayName("status = BLOCKED → lançar AccountInactiveException")
-        void givenBlockedAccount_whenExecute_thenThrowsAccountInactiveException() {
+        void givenBlockedOriginAccount_whenExecute_thenThrowsAccountInactiveException() {
             context.setAmount(new BigDecimal("100.00"));
             Account account = buildAccount(AccountStatus.BLOCKED, new BigDecimal("500.00"));
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
+
+            assertThatThrownBy(() -> validateAccountStep.execute(context))
+                    .isInstanceOf(AccountInactiveException.class);
+        }
+
+        @Test
+        @DisplayName("destino status = INACTIVE → lançar AccountInactiveException")
+        void givenInactiveDestinationAccount_whenExecute_thenThrowsAccountInactiveException() {
+            context.setAmount(new BigDecimal("100.00"));
+            Account origin = buildAccount(AccountStatus.ACTIVE, new BigDecimal("500.00"));
+            Account destination = Account.builder()
+                    .id("acc-002")
+                    .status(AccountStatus.INACTIVE)
+                    .balance(new BigDecimal("100.00"))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            when(accountRepository.findById("acc-001")).thenReturn(Optional.of(origin));
+            when(accountRepository.findById("acc-002")).thenReturn(Optional.of(destination));
+
+            assertThatThrownBy(() -> validateAccountStep.execute(context))
+                    .isInstanceOf(AccountInactiveException.class);
+        }
+
+        @Test
+        @DisplayName("destino status = BLOCKED → lançar AccountInactiveException")
+        void givenBlockedDestinationAccount_whenExecute_thenThrowsAccountInactiveException() {
+            context.setAmount(new BigDecimal("100.00"));
+            Account origin = buildAccount(AccountStatus.ACTIVE, new BigDecimal("500.00"));
+            Account destination = Account.builder()
+                    .id("acc-002")
+                    .status(AccountStatus.BLOCKED)
+                    .balance(new BigDecimal("100.00"))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
+                    .build();
+            when(accountRepository.findById("acc-001")).thenReturn(Optional.of(origin));
+            when(accountRepository.findById("acc-002")).thenReturn(Optional.of(destination));
 
             assertThatThrownBy(() -> validateAccountStep.execute(context))
                     .isInstanceOf(AccountInactiveException.class);
@@ -100,7 +146,11 @@ class ValidateAccountStepTest {
         void givenSufficientBalance_whenExecute_thenNoException() {
             context.setAmount(new BigDecimal("300.00"));
             Account account = buildAccount(AccountStatus.ACTIVE, new BigDecimal("500.00"));
+            Account destination = Account.builder()
+                    .id("acc-002").status(AccountStatus.ACTIVE).balance(new BigDecimal("100.00"))
+                    .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
+            when(accountRepository.findById("acc-002")).thenReturn(Optional.of(destination));
 
             assertThatCode(() -> validateAccountStep.execute(context)).doesNotThrowAnyException();
         }
@@ -110,7 +160,11 @@ class ValidateAccountStepTest {
         void givenExactBalance_whenExecute_thenNoException() {
             context.setAmount(new BigDecimal("500.00"));
             Account account = buildAccount(AccountStatus.ACTIVE, new BigDecimal("500.00"));
+            Account destination = Account.builder()
+                    .id("acc-002").status(AccountStatus.ACTIVE).balance(new BigDecimal("100.00"))
+                    .createdAt(LocalDateTime.now()).updatedAt(LocalDateTime.now()).build();
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
+            when(accountRepository.findById("acc-002")).thenReturn(Optional.of(destination));
 
             assertThatCode(() -> validateAccountStep.execute(context)).doesNotThrowAnyException();
         }

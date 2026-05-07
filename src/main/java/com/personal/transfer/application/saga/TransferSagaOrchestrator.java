@@ -26,13 +26,13 @@ public class TransferSagaOrchestrator {
 
     /**
      * Executes the SAGA with the following steps:
-     * 1. FetchCustomer    — reads customer from Cadastro API
-     * 2. ValidateAccount  — validates account status and balance
-     * 3. ValidateLimit    — validates daily limit via Redis INCRBY (atomic)
-     * 4. ExecuteTransfer  — debits origin, credits destination
+     * 1. ValidateAccount   — validates account status and balance (local DB)
+     * 2. ValidateLimit     — validates daily limit via Redis INCRBY (atomic)
+     * 3. FetchCustomer     — reads customer from Cadastro API
+     * 4. ExecuteTransfer   — debits origin, credits destination
      * 5. PublishBacenEvent — publishes event to SQS
      * Compensations on failure:
-     * - Step 5 fails → compensate Step 4 (rollback debit/credit) + Step 3 (Redis DECRBY)
+     * - Step 5 fails → compensate Step 4 (rollback debit/credit) + Step 2 (Redis DECRBY)
      * - Step 4 fails before debit → no compensation
      * - Steps 1/2/3 fail → no compensation (nothing changed)
      */
@@ -57,17 +57,9 @@ public class TransferSagaOrchestrator {
         transferRepository.save(transfer);
 
         try {
-            fetchCustomerStep.execute(context);
-        } catch (ExternalServiceException e) {
-            log.error("[SAGA][Step1:FetchCustomer] Falha — retornando 502. transferId={}, erro={}", transferId, e.getMessage());
-            updateTransferStatus(transfer, TransferStatus.FAILED);
-            throw e;
-        }
-
-        try {
             validateAccountStep.execute(context);
         } catch (Exception e) {
-            log.error("[SAGA][Step2:ValidateAccount] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
+            log.error("[SAGA][Step1:ValidateAccount] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
             updateTransferStatus(transfer, TransferStatus.FAILED);
             throw e;
         }
@@ -75,7 +67,16 @@ public class TransferSagaOrchestrator {
         try {
             validateLimitStep.execute(context);
         } catch (Exception e) {
-            log.error("[SAGA][Step3:ValidateLimit] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
+            log.error("[SAGA][Step2:ValidateLimit] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
+            updateTransferStatus(transfer, TransferStatus.FAILED);
+            throw e;
+        }
+
+        try {
+            fetchCustomerStep.execute(context);
+        } catch (ExternalServiceException e) {
+            log.error("[SAGA][Step3:FetchCustomer] Falha — retornando 502. transferId={}, erro={}", transferId, e.getMessage());
+            validateLimitStep.compensate(context);
             updateTransferStatus(transfer, TransferStatus.FAILED);
             throw e;
         }
@@ -85,7 +86,7 @@ public class TransferSagaOrchestrator {
         } catch (Exception e) {
             log.error("[SAGA][Step4:ExecuteTransfer] Falha. transferId={}, erro={}", transferId, e.getMessage());
             if (context.isTransferExecuted()) {
-                log.warn("[SAGA] Iniciando compensação do Step4 e Step3 para transferId={}", transferId);
+                log.warn("[SAGA] Iniciando compensação do Step4 e Step2 para transferId={}", transferId);
                 compensateTransfer(context);
             }
             updateTransferStatus(transfer, TransferStatus.FAILED);
