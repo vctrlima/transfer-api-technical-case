@@ -1,0 +1,26 @@
+package com.personal.transfer.application.saga;
+
+import com.personal.transfer.domain.entities.TransferStatus;
+import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
+import lombok.Builder;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+@Builder
+public class SagaContext {
+
+    private String transferId;
+    private String originAccountId;
+    private String destinationAccountId;
+    private BigDecimal amount;
+    private String idempotencyKey;
+    private String description;
+
+    private CustomerResponse customer;
+    private boolean transferExecuted;
+
+    @Builder.Default
+    private TransferStatus sagaStatus = TransferStatus.PROCESSING;
+}
