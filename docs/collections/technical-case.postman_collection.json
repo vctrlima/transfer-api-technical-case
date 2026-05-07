@@ -1,0 +1,890 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Technical Case – Transfer API",
+    "description": "Collection completa para testar os endpoints da Transfer API.\n\n**Pré-requisitos:**\n- Aplicação rodando em `http://localhost:8080`\n- Redis disponível em `localhost:6379`\n\n**Contas pré-carregadas (data.sql):**\n| ID | Status | Saldo |\n|---|---|---|\n| acc-origin-001 | ACTIVE | R$ 1.500,00 |\n| acc-dest-001 | ACTIVE | R$ 500,00 |\n| acc-inactive-001 | INACTIVE | R$ 200,00 |\n| acc-blocked-001 | BLOCKED | R$ 300,00 |",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Transferências",
+      "description": "Endpoints relacionados à realização de transferências entre contas.",
+      "item": [
+        {
+          "name": "✅ Transferência válida",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Gera um Idempotency-Key único por execução",
+                  "const uuid = require('uuid');",
+                  "pm.variables.set('idempotencyKey', pm.variables.get('idempotencyKey') || uuid.v4());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('Resposta contém transferId', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('transferId');",
+                  "    pm.collectionVariables.set('lastTransferId', json.transferId);",
+                  "});",
+                  "",
+                  "pm.test('Status da transferência presente', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Chave única para idempotência. Use um UUID diferente a cada nova requisição."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 100.00,\n  \"description\": \"Pagamento de serviço\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Realiza uma transferência válida entre duas contas ativas com saldo suficiente.\n\n**Conta origem:** acc-origin-001 (saldo R$1.500,00)\n**Conta destino:** acc-dest-001\n\n**Retorna:** 202 Accepted com os dados da transferência."
+          }
+        },
+        {
+          "name": "✅ Transferência idempotente (repete a mesma key)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 202 Accepted (idempotente)', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "pm.test('Retornou a resposta cacheada', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('transferId');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "chave-fixa-para-teste-idempotencia-001",
+                "description": "Use EXATAMENTE a mesma chave de uma requisição anterior para testar a idempotência."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 100.00,\n  \"description\": \"Pagamento de serviço\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Envia a mesma Idempotency-Key de uma requisição anterior. O servidor deve retornar a resposta cacheada sem processar novamente.\n\n**Importante:** Execute primeiro a requisição '✅ Transferência válida' com a chave `chave-fixa-para-teste-idempotencia-001`, depois execute esta."
+          }
+        },
+        {
+          "name": "✅ Transferência sem description (campo opcional)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 202 Accepted', () => {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 50.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Transferência sem o campo `description`, que é opcional."
+          }
+        },
+        {
+          "name": "❌ Sem Idempotency-Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro MISSING_IDEMPOTENCY_KEY', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('MISSING_IDEMPOTENCY_KEY');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 100.00,\n  \"description\": \"Sem Idempotency-Key\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 400 Bad Request quando o header `Idempotency-Key` não for enviado."
+          }
+        },
+        {
+          "name": "❌ Conta de origem inativa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro ACCOUNT_INACTIVE', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('ACCOUNT_INACTIVE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-inactive-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 50.00,\n  \"description\": \"Tentativa com conta de origem inativa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 422 quando a conta de origem estiver com status INACTIVE."
+          }
+        },
+        {
+          "name": "❌ Conta de destino bloqueada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro ACCOUNT_INACTIVE', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('ACCOUNT_INACTIVE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-blocked-001\",\n  \"amount\": 50.00,\n  \"description\": \"Tentativa com conta de destino bloqueada\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 422 quando a conta de destino estiver com status BLOCKED."
+          }
+        },
+        {
+          "name": "❌ Saldo insuficiente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro INSUFFICIENT_BALANCE', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('INSUFFICIENT_BALANCE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 99999.00,\n  \"description\": \"Transferência acima do saldo disponível\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 422 quando o saldo da conta de origem for menor que o valor a transferir."
+          }
+        },
+        {
+          "name": "❌ Limite diário excedido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro DAILY_LIMIT_EXCEEDED', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('DAILY_LIMIT_EXCEEDED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 1001.00,\n  \"description\": \"Transferência acima do limite diário de R$1.000,00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 422 quando o valor exceder o limite diário configurado (R$1.000,00 por `transfer.daily-limit` no application.properties)."
+          }
+        },
+        {
+          "name": "❌ Conta não encontrada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro ENTITY_NOT_FOUND', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('ENTITY_NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-inexistente-999\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 50.00,\n  \"description\": \"Conta de origem inexistente\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 422 quando a conta informada não existir no banco de dados."
+          }
+        },
+        {
+          "name": "❌ Payload inválido – valor zerado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro VALIDATION_ERROR', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originAccountId\": \"acc-origin-001\",\n  \"destinationAccountId\": \"acc-dest-001\",\n  \"amount\": 0.00,\n  \"description\": \"Valor inválido\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 400 por falha na validação do Bean Validation (`@DecimalMin(\"0.01\")`)."
+          }
+        },
+        {
+          "name": "❌ Payload inválido – campos obrigatórios ausentes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400 Bad Request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro VALIDATION_ERROR', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Requisição sem campos obrigatórios\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers"
+              ]
+            },
+            "description": "Deve retornar 400 quando `originAccountId`, `destinationAccountId` e `amount` não forem enviados."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Contas",
+      "description": "Endpoints relacionados à consulta de dados das contas.",
+      "item": [
+        {
+          "name": "✅ Consulta de saldo – conta ativa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Resposta contém todos os campos esperados', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('accountId');",
+                  "    pm.expect(json).to.have.property('balance');",
+                  "    pm.expect(json).to.have.property('availableLimit');",
+                  "    pm.expect(json).to.have.property('dailyLimitUsed');",
+                  "    pm.expect(json).to.have.property('dailyLimitRemaining');",
+                  "    pm.expect(json).to.have.property('updatedAt');",
+                  "});",
+                  "",
+                  "pm.test('accountId bate com o solicitado', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.accountId).to.eql('acc-origin-001');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/acc-origin-001/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "acc-origin-001",
+                "balance"
+              ]
+            },
+            "description": "Consulta o saldo e limites da conta `acc-origin-001` (ACTIVE, saldo R$1.500,00).\n\n**Retorna:**\n- `accountId`\n- `balance`\n- `availableLimit`\n- `dailyLimitUsed`\n- `dailyLimitRemaining`\n- `updatedAt`"
+          }
+        },
+        {
+          "name": "✅ Consulta de saldo – conta destino",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('accountId bate com o solicitado', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.accountId).to.eql('acc-dest-001');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/acc-dest-001/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "acc-dest-001",
+                "balance"
+              ]
+            },
+            "description": "Consulta o saldo da conta `acc-dest-001` (ACTIVE, saldo R$500,00)."
+          }
+        },
+        {
+          "name": "✅ Consulta de saldo – conta inativa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/acc-inactive-001/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "acc-inactive-001",
+                "balance"
+              ]
+            },
+            "description": "Consulta o saldo de uma conta INACTIVE. A consulta de saldo deve ser permitida mesmo para contas inativas."
+          }
+        },
+        {
+          "name": "❌ Consulta de saldo – conta inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 4xx', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/acc-inexistente-999/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "acc-inexistente-999",
+                "balance"
+              ]
+            },
+            "description": "Deve retornar erro ao consultar saldo de uma conta que não existe."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actuator / Health",
+      "description": "Endpoints do Spring Boot Actuator para monitoramento da aplicação.",
+      "item": [
+        {
+          "name": "Health – status geral",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status UP ou degradado', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('status');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Verifica o health geral da aplicação, incluindo dependências (Redis, DB, etc.)."
+          }
+        },
+        {
+          "name": "Metrics – lista de métricas disponíveis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics"
+              ]
+            },
+            "description": "Lista todas as métricas expostas pelo Micrometer."
+          }
+        },
+        {
+          "name": "Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/info",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "info"
+              ]
+            },
+            "description": "Informações da aplicação (versão, build, etc.)."
+          }
+        }
+      ]
+    }
+  ]
+}
+
