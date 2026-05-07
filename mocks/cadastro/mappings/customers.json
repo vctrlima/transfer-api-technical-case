@@ -1,0 +1,88 @@
+{
+  "mappings": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "/customers/acc-origin-001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "id": "acc-origin-001",
+          "name": "Victor Lima",
+          "status": "ACTIVE"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/customers/acc-dest-001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "id": "acc-dest-001",
+          "name": "João Silva",
+          "status": "ACTIVE"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/customers/acc-inactive-001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "id": "acc-inactive-001",
+          "name": "Maria Santos",
+          "status": "INACTIVE"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/customers/acc-blocked-001"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "id": "acc-blocked-001",
+          "name": "Pedro Costa",
+          "status": "BLOCKED"
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "/customers/acc-inexistente-999"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "error": "Customer not found"
+        }
+      }
+    }
+  ]
+}
+
