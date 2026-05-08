@@ -80,19 +80,20 @@ GET /v1/accounts/acc-origin-001/balance
 {
   "accountId": "acc-origin-001",
   "customerName": "Victor Lima",
-  "balance": 1500.00,
-  "availableLimit": 1000.00,
-  "dailyLimitUsed": 0.00,
-  "dailyLimitRemaining": 1000.00,
+  "balance": 1500.0,
+  "availableLimit": 1000.0,
+  "dailyLimitUsed": 0.0,
+  "dailyLimitRemaining": 1000.0,
   "updatedAt": "2026-05-08T12:00:00"
 }
 ```
 
 **Erros:**
-| Código HTTP | Código de erro | Descrição |
-|-------------|---------------|-----------|
-| 422 | `ACCOUNT_INACTIVE` | Conta inativa ou bloqueada |
-| 422 | `ENTITY_NOT_FOUND` | Conta não encontrada |
+
+| Código HTTP | Código de erro      | Descrição               |
+|-------------|---------------------|-------------------------|
+| 422         | `ACCOUNT_INACTIVE`  | Conta inativa ou bloqueada |
+| 422         | `ENTITY_NOT_FOUND`  | Conta não encontrada    |
 
 ---
 
@@ -113,7 +114,7 @@ Content-Type: application/json
 {
   "originAccountId": "acc-origin-001",
   "destinationAccountId": "acc-dest-001",
-  "amount": 200.00,
+  "amount": 200.0,
   "description": "Pagamento de serviço"
 }
 ```
@@ -124,7 +125,7 @@ Content-Type: application/json
 {
   "transferId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "status": "PROCESSING",
-  "amount": 200.00,
+  "amount": 200.0,
   "originAccountId": "acc-origin-001",
   "destinationAccountId": "acc-dest-001",
   "createdAt": "2026-05-08T12:00:00"
@@ -132,15 +133,16 @@ Content-Type: application/json
 ```
 
 **Erros:**
-| Código HTTP | Código de erro | Descrição |
-|-------------|---------------|-----------|
-| 400 | `MISSING_IDEMPOTENCY_KEY` | Header obrigatório ausente |
-| 400 | `VALIDATION_ERROR` | Campos inválidos (amount ≤ 0, campos nulos) |
-| 422 | `ACCOUNT_INACTIVE` | Conta inativa ou bloqueada |
-| 422 | `INSUFFICIENT_BALANCE` | Saldo insuficiente na conta de origem |
-| 422 | `DAILY_LIMIT_EXCEEDED` | Limite diário de R$ 1.000,00 excedido |
-| 422 | `ENTITY_NOT_FOUND` | Conta não encontrada |
-| 502 | `EXTERNAL_SERVICE_UNAVAILABLE` | API de Cadastro ou BACEN indisponível |
+
+| Código HTTP | Código de erro                 | Descrição                                   |
+|-------------|--------------------------------|---------------------------------------------|
+| 400         | `MISSING_IDEMPOTENCY_KEY`      | Header obrigatório ausente                  |
+| 400         | `VALIDATION_ERROR`             | Campos inválidos (amount ≤ 0, campos nulos) |
+| 422         | `ACCOUNT_INACTIVE`             | Conta inativa ou bloqueada                  |
+| 422         | `INSUFFICIENT_BALANCE`         | Saldo insuficiente na conta de origem       |
+| 422         | `DAILY_LIMIT_EXCEEDED`         | Limite diário de R$ 1.000,00 excedido       |
+| 422         | `ENTITY_NOT_FOUND`             | Conta não encontrada                        |
+| 502         | `EXTERNAL_SERVICE_UNAVAILABLE` | API de Cadastro ou BACEN indisponível       |
 
 ---
 
@@ -161,7 +163,7 @@ GET /v1/transfers/3fa85f64-5717-4562-b3fc-2c963f66afa6
 {
   "transferId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "status": "COMPLETED",
-  "amount": 200.00,
+  "amount": 200.0,
   "originAccountId": "acc-origin-001",
   "destinationAccountId": "acc-dest-001",
   "createdAt": "2026-05-08T12:00:00"
@@ -201,27 +203,148 @@ Para confirmar o status final, use `GET /v1/transfers/{transferId}`.
 
 ## Arquitetura
 
+O Transfer Service foi organizado seguindo **Arquitetura Hexagonal**, **Clean Architecture** e princípios de **DDD**. A
+ideia central é manter regras de negócio e fluxos de aplicação independentes de frameworks, banco, Redis, Feign ou AWS.
+
+As dependências apontam para dentro:
+
+```text
+interfaces
+    ↓
+application
+    ↓
+domain
+
+infrastructure
+    ↑ implementa ports definidos pela application
+```
+
+Fluxo padrão de execução:
+
+```text
+Controller
+  └─► UseCase / QueryUseCase
+        └─► Application Port
+              └─► Infrastructure Adapter
+                    └─► JPA / Redis / Feign / SQS / API externa
+```
+
+### Estrutura de pacotes
+
 ```
 interfaces/
-  controllers/       ← REST endpoints (Spring MVC)
-  dto/               ← Records de request/response
+  controllers/          ← Adaptadores de entrada HTTP (Spring MVC)
+  dto/                  ← DTOs públicos da API REST
 
 application/
-  usecases/          ← Casos de uso (BalanceUseCase, TransferUseCase)
-  saga/              ← Orquestração SAGA com compensação transacional
-    steps/           ← Strategy Pattern: cada step é independente e compensável
+  dto/                  ← DTOs internos da aplicação, independentes da camada HTTP
+  ports/out/            ← Contratos de saída usados pelos casos de uso
+  query/                ← Query Use Cases para endpoints de leitura
+  usecases/             ← Casos de uso de comando/orquestração
+  saga/                 ← Orquestração SAGA com compensação transacional
+    steps/              ← Steps independentes e compensáveis
 
 domain/
-  entities/          ← Account, Transfer (JPA)
-  valueobjects/      ← Money (imutável, com invariantes)
-  exceptions/        ← Exceções de negócio customizadas
+  entities/             ← Entidades de domínio puras (sem JPA/Spring)
+  valueobjects/         ← Value Objects imutáveis, como Money
+  exceptions/           ← Exceções semânticas de negócio
 
 infrastructure/
-  adapters/          ← Feign clients + Circuit Breaker + Retry (Resilience4j)
-  persistence/       ← JPA Repositories
-  redis/             ← Cache de saldo, cliente, limite diário, idempotência
-  sqs/               ← Publisher e Consumer de eventos BACEN
-  config/            ← Configuração de Redis, SQS, ObjectMapper
+  adapters/             ← Integrações externas via Feign + Resilience4j
+  persistence/          ← Adapters JPA que implementam ports da aplicação
+    entities/           ← Entidades JPA
+    mappers/            ← Conversão JPA ↔ domínio
+  redis/                ← Adapters Redis que implementam ports de cache/estado efêmero
+  sqs/                  ← Publisher/Consumer SQS nas bordas da aplicação
+  config/               ← Configuração de Redis, SQS, ObjectMapper
+```
+
+### Responsabilidades por camada
+
+| Camada           | Responsabilidade                                                                     | Não deve conhecer                          |
+|------------------|--------------------------------------------------------------------------------------|--------------------------------------------|
+| `interfaces`     | HTTP, validação de request, status codes, DTOs públicos                              | JPA, Redis, Feign, AWS SDK, repositories   |
+| `application`    | Orquestração, casos de uso, query use cases, SAGA, ports                             | Implementações concretas de infraestrutura |
+| `domain`         | Entidades, invariantes, comportamento de negócio, value objects, exceções semânticas | Spring, JPA, Redis, Feign, HTTP            |
+| `infrastructure` | Persistência, cache, mensageria, APIs externas, configurações técnicas               | Regras de apresentação                     |
+
+### Ports & Adapters
+
+A application define contratos de saída em `application/ports/out`. A infrastructure implementa esses contratos:
+
+| Port                      | Implementação                                   | Responsabilidade                               |
+|---------------------------|-------------------------------------------------|------------------------------------------------|
+| `AccountPort`             | `infrastructure.persistence.AccountRepository`  | Busca e persistência de contas via JPA         |
+| `TransferPort`            | `infrastructure.persistence.TransferRepository` | Busca e persistência de transferências via JPA |
+| `BalanceCachePort`        | `BalanceCacheRepository`                        | Cache curto de consulta de saldo               |
+| `DailyLimitPort`          | `DailyLimitRepository`                          | Controle atômico do limite diário              |
+| `IdempotencyPort`         | `IdempotencyRepository`                         | Cache de respostas idempotentes                |
+| `CustomerGateway`         | `CadastroApiAdapter`                            | Integração com API de Cadastro                 |
+| `BacenNotificationPort`   | `BacenApiAdapter`                               | Notificação HTTP ao BACEN                      |
+| `BacenEventPublisherPort` | `BacenEventPublisher`                           | Publicação de eventos no SQS                   |
+
+Com isso, controllers e casos de uso não dependem de classes como `JpaRepository`, `StringRedisTemplate`, Feign clients
+ou `SqsClient`.
+
+### Command Use Cases e Query Use Cases
+
+Endpoints de comando e leitura são separados:
+
+| Endpoint                               | Tipo    | Entrada na application        |
+|----------------------------------------|---------|-------------------------------|
+| `POST /v1/transfers`                   | Command | `TransferUseCase`             |
+| `GET /v1/transfers/{transferId}`       | Query   | `GetTransferByIdQueryUseCase` |
+| `GET /v1/accounts/{accountId}/balance` | Query   | `GetBalanceQueryUseCase`      |
+
+Essa separação evita controller consultando banco diretamente e deixa regras de leitura centralizadas na camada de
+aplicação.
+
+### Modelo de domínio
+
+As entidades de domínio são puras:
+
+- `Account` concentra comportamento de conta: `ensureActive`, `ensureSufficientBalance`, `debit`, `credit`.
+- `Transfer` concentra criação e transições de estado: `start`, `markAs`.
+- `Money` é um value object imutável e valida valor positivo com até duas casas decimais.
+- Exceções como `AccountInactiveException`, `InsufficientBalanceException`, `DailyLimitExceededException`,
+  `AccountNotFoundException` e `TransferNotFoundException` expressam falhas de negócio de forma semântica.
+
+As anotações JPA ficam apenas em `infrastructure.persistence.entities`, e os mappers traduzem entre o modelo persistido
+e o modelo de domínio.
+
+### Visão da solução
+
+```mermaid
+flowchart TD
+    Client["Cliente HTTP"]
+    Controllers["interfaces.controllers"]
+    Commands["application.usecases"]
+    Queries["application.query"]
+    Saga["application.saga"]
+    Ports["application.ports.out"]
+    Domain["domain"]
+    Jpa["infrastructure.persistence (JPA/H2)"]
+    Redis["infrastructure.redis"]
+    Cadastro["Cadastro API (WireMock/Feign)"]
+    Sqs["AWS SQS (LocalStack)"]
+    BacenConsumer["BacenEventConsumer"]
+    Bacen["BACEN API (WireMock/Feign)"]
+
+    Client --> Controllers
+    Controllers --> Commands
+    Controllers --> Queries
+    Commands --> Saga
+    Commands --> Ports
+    Queries --> Ports
+    Saga --> Domain
+    Saga --> Ports
+    Ports --> Jpa
+    Ports --> Redis
+    Ports --> Cadastro
+    Ports --> Sqs
+    Sqs --> BacenConsumer
+    BacenConsumer --> Ports
+    Ports --> Bacen
 ```
 
 ---
@@ -230,13 +353,13 @@ infrastructure/
 
 A transferência é executada em 5 steps com compensação automática em caso de falha:
 
-| # | Step                    | O que faz                                                                               | Compensação                      |
-|---|-------------------------|-----------------------------------------------------------------------------------------|----------------------------------|
-| 1 | `ValidateAccountStep`   | Lê as duas contas no DB (sem lock). Valida status e saldo.                              | —                                |
-| 2 | `ValidateLimitStep`     | `INCRBY` atômico no Redis. Valida limite diário (R$ 1.000,00).                          | `DECR` no Redis                  |
-| 3 | `FetchCustomerStep`     | Busca dados do cliente na API de Cadastro (cache Redis 60s).                            | —                                |
-| 4 | `ExecuteTransferStep`   | `SELECT FOR UPDATE` nas contas → debit/credit + INSERT transfer, tudo em uma transação. | Crédito/débito reverso           |
-| 5 | `PublishBacenEventStep` | Publica `BacenTransferEvent` no SQS.                                                    | — (SAGA sofre rollback completo) |
+| # | Step                    | O que faz                                                                                        | Compensação                      |
+|---|-------------------------|--------------------------------------------------------------------------------------------------|----------------------------------|
+| 1 | `ValidateAccountStep`   | Consulta contas via `AccountPort`. Valida status e saldo usando comportamento do domínio.        | —                                |
+| 2 | `ValidateLimitStep`     | Incrementa o limite diário via `DailyLimitPort` e valida o teto de R$ 1.000,00.                  | Decremento via `DailyLimitPort`  |
+| 3 | `FetchCustomerStep`     | Busca dados do cliente via `CustomerGateway`.                                                    | —                                |
+| 4 | `ExecuteTransferStep`   | Bloqueia contas via `AccountPort`, executa debit/credit e persiste a transferência em transação. | Crédito/débito reverso           |
+| 5 | `PublishBacenEventStep` | Publica `BacenTransferEvent` via `BacenEventPublisherPort`.                                      | — (SAGA sofre rollback completo) |
 
 > Steps 2 e 3 executam **em paralelo** via virtual threads para reduzir latência.  
 > Requisições rejeitadas (validações) **não geram escrita no banco** — o INSERT da transferência ocorre apenas após
@@ -248,12 +371,12 @@ A transferência é executada em 5 steps com compensação automática em caso d
 
 ## Redis — Caches e Estado Efêmero
 
-| Repositório               | Prefixo da chave             | TTL | Estratégia                                          |
-|---------------------------|------------------------------|-----|-----------------------------------------------------|
-| `IdempotencyRepository`   | `idempotency::`              | 24h | Write-aside (controller)                            |
-| `DailyLimitRepository`    | `limit::{accountId}::{data}` | 48h | Counter atômico (INCRBY/DECR em pipeline)           |
-| `BalanceCacheRepository`  | `balance::`                  | 5s  | Read-through; evicção explícita pós-transferência   |
-| `CustomerCacheRepository` | `customer::`                 | 60s | Read-through (cache da resposta da API de Cadastro) |
+| Repositório               | Prefixo da chave             | TTL | Estratégia                                             |
+|---------------------------|------------------------------|-----|--------------------------------------------------------|
+| `IdempotencyRepository`   | `idempotency::`              | 24h | Write-aside no `TransferUseCase` via `IdempotencyPort` |
+| `DailyLimitRepository`    | `limit::{accountId}::{data}` | 48h | Counter atômico (INCRBY/DECR em pipeline)              |
+| `BalanceCacheRepository`  | `balance::`                  | 5s  | Read-through; evicção explícita pós-transferência      |
+| `CustomerCacheRepository` | `customer::`                 | 60s | Read-through (cache da resposta da API de Cadastro)    |
 
 ---
 
