@@ -2,6 +2,9 @@
 
 API REST para **Consulta de Saldo** e **Transferência entre Contas**, desenvolvida em Java 21 + Spring Boot 3.3.2.
 
+Arquitetura Hexagonal (Ports & Adapters) com padrão SAGA orquestrado, Redis para cache/estado efêmero e AWS SQS para
+notificação assíncrona ao BACEN.
+
 ---
 
 ## Pré-requisitos
@@ -219,6 +222,37 @@ infrastructure/
 
 ---
 
+## SAGA de Transferência
+
+A transferência é executada em 5 steps com compensação automática em caso de falha:
+
+| # | Step                    | O que faz                                                                               | Compensação                      |
+|---|-------------------------|-----------------------------------------------------------------------------------------|----------------------------------|
+| 1 | `ValidateAccountStep`   | Lê as duas contas no DB (sem lock). Valida status e saldo.                              | —                                |
+| 2 | `ValidateLimitStep`     | `INCRBY` atômico no Redis. Valida limite diário (R$ 1.000,00).                          | `DECR` no Redis                  |
+| 3 | `FetchCustomerStep`     | Busca dados do cliente na API de Cadastro (cache Redis 60s).                            | —                                |
+| 4 | `ExecuteTransferStep`   | `SELECT FOR UPDATE` nas contas → debit/credit + INSERT transfer, tudo em uma transação. | Crédito/débito reverso           |
+| 5 | `PublishBacenEventStep` | Publica `BacenTransferEvent` no SQS.                                                    | — (SAGA sofre rollback completo) |
+
+> Steps 2 e 3 executam **em paralelo** via virtual threads para reduzir latência.  
+> Requisições rejeitadas (validações) **não geram escrita no banco** — o INSERT da transferência ocorre apenas após
+> todas as validações passarem.
+
+**Ordenação de locks:** `findAllByIdsWithLock` usa `ORDER BY id` para evitar deadlocks em transações concorrentes.
+
+---
+
+## Redis — Caches e Estado Efêmero
+
+| Repositório               | Prefixo da chave             | TTL | Estratégia                                          |
+|---------------------------|------------------------------|-----|-----------------------------------------------------|
+| `IdempotencyRepository`   | `idempotency::`              | 24h | Write-aside (controller)                            |
+| `DailyLimitRepository`    | `limit::{accountId}::{data}` | 48h | Counter atômico (INCRBY/DECR em pipeline)           |
+| `BalanceCacheRepository`  | `balance::`                  | 5s  | Read-through; evicção explícita pós-transferência   |
+| `CustomerCacheRepository` | `customer::`                 | 60s | Read-through (cache da resposta da API de Cadastro) |
+
+---
+
 ## Padrões de resiliência
 
 | Dependência  | Circuit Breaker             | Retry                     | Timeout    |
@@ -231,6 +265,31 @@ Resilience4j, evitando agravar o rate limit).
 
 ---
 
+## Observabilidade
+
+| Endpoint                   | Descrição                          |
+|----------------------------|------------------------------------|
+| `GET /actuator/health`     | Status da aplicação e dependências |
+| `GET /actuator/prometheus` | Métricas no formato Prometheus     |
+| `GET /actuator/metrics`    | Métricas detalhadas                |
+
+Distributed tracing via **Micrometer + Brave (Zipkin)**. Sampling padrão: 1% (
+`management.tracing.sampling.probability=0.01`).  
+Logs incluem `traceId` e `spanId` no padrão: `[traceId=...,spanId=...]`.
+
+---
+
+## Performance
+
+- **Virtual Threads** habilitadas (`spring.threads.virtual.enabled=true`) — Tomcat e steps paralelos da SAGA rodam em
+  virtual threads.
+- **Tomcat:** max 400 threads, 10.000 conexões concorrentes, accept-count 200.
+- **HikariCP:** pool de 10–50 conexões, timeout de 3s.
+- **Feign HC5:** pool de 200 conexões (50/rota).
+- **JPA batch:** inserts/updates em lotes de 20.
+
+---
+
 ## Contas de teste (data.sql)
 
 | ID                 | Status   | Saldo       |
@@ -239,4 +298,3 @@ Resilience4j, evitando agravar o rate limit).
 | `acc-dest-001`     | ACTIVE   | R$ 500,00   |
 | `acc-inactive-001` | INACTIVE | R$ 200,00   |
 | `acc-blocked-001`  | BLOCKED  | R$ 300,00   |
-
