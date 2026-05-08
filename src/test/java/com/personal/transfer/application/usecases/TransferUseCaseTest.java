@@ -1,5 +1,7 @@
 package com.personal.transfer.application.usecases;
 
+import com.personal.transfer.application.dto.TransferResult;
+import com.personal.transfer.application.ports.out.IdempotencyPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.TransferSagaOrchestrator;
 import com.personal.transfer.domain.entities.Transfer;
@@ -20,8 +22,7 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TransferUseCase — orquestração da transferência via SAGA")
@@ -29,6 +30,9 @@ class TransferUseCaseTest {
 
     @Mock
     private TransferSagaOrchestrator sagaOrchestrator;
+
+    @Mock
+    private IdempotencyPort idempotencyPort;
 
     @InjectMocks
     private TransferUseCase transferUseCase;
@@ -48,8 +52,9 @@ class TransferUseCaseTest {
                 .build();
 
         when(sagaOrchestrator.execute(any(SagaContext.class))).thenReturn(expected);
+        when(idempotencyPort.findTransferResult("idem-key-001")).thenReturn(java.util.Optional.empty());
 
-        Transfer result = transferUseCase.execute(
+        TransferResult result = transferUseCase.execute(
                 "acc-origin",
                 "acc-dest",
                 new Money(new BigDecimal("200.00")),
@@ -57,7 +62,7 @@ class TransferUseCaseTest {
                 "Pagamento de serviço"
         );
 
-        assertThat(result).isEqualTo(expected);
+        assertThat(result.transferId()).isEqualTo(expected.getId());
 
         ArgumentCaptor<SagaContext> contextCaptor = ArgumentCaptor.forClass(SagaContext.class);
         verify(sagaOrchestrator).execute(contextCaptor.capture());
@@ -68,6 +73,7 @@ class TransferUseCaseTest {
         assertThat(capturedContext.getAmount()).isEqualByComparingTo("200.00");
         assertThat(capturedContext.getIdempotencyKey()).isEqualTo("idem-key-001");
         assertThat(capturedContext.getDescription()).isEqualTo("Pagamento de serviço");
+        verify(idempotencyPort).saveTransferResult("idem-key-001", result);
     }
 
     @Test
@@ -80,6 +86,7 @@ class TransferUseCaseTest {
                 .build();
 
         when(sagaOrchestrator.execute(any(SagaContext.class))).thenReturn(expected);
+        when(idempotencyPort.findTransferResult("idem-key-002")).thenReturn(java.util.Optional.empty());
 
         transferUseCase.execute(
                 "acc-origin",
@@ -98,6 +105,7 @@ class TransferUseCaseTest {
     @Test
     @DisplayName("execute → propaga exceção lançada pela SAGA")
     void givenSagaThrows_whenExecute_thenPropagatesException() {
+        when(idempotencyPort.findTransferResult("idem-key-003")).thenReturn(java.util.Optional.empty());
         when(sagaOrchestrator.execute(any(SagaContext.class)))
                 .thenThrow(new ExternalServiceException("SAGA execution failed"));
 
@@ -110,5 +118,30 @@ class TransferUseCaseTest {
         )).isInstanceOf(ExternalServiceException.class)
                 .hasMessageContaining("SAGA execution failed");
     }
-}
 
+    @Test
+    @DisplayName("execute com chave cacheada → retorna resposta idempotente sem chamar SAGA")
+    void givenCachedIdempotencyKey_whenExecute_thenReturnsCachedResponse() {
+        TransferResult cached = new TransferResult(
+                "transfer-cached",
+                TransferStatus.PROCESSING,
+                new BigDecimal("10.00"),
+                "acc-origin",
+                "acc-dest",
+                LocalDateTime.now()
+        );
+        when(idempotencyPort.findTransferResult("idem-key-cached"))
+                .thenReturn(java.util.Optional.of(cached));
+
+        TransferResult result = transferUseCase.execute(
+                "acc-origin",
+                "acc-dest",
+                new Money(new BigDecimal("10.00")),
+                "idem-key-cached",
+                null
+        );
+
+        assertThat(result).isEqualTo(cached);
+        verifyNoInteractions(sagaOrchestrator);
+    }
+}

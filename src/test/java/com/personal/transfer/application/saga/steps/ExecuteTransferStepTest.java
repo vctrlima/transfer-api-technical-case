@@ -1,14 +1,14 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.ports.out.AccountPort;
+import com.personal.transfer.application.ports.out.BalanceCachePort;
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.domain.entities.Account;
 import com.personal.transfer.domain.entities.AccountStatus;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
-import com.personal.transfer.infrastructure.redis.BalanceCacheRepository;
-import jakarta.persistence.EntityNotFoundException;
+import com.personal.transfer.domain.exceptions.AccountNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -32,13 +32,13 @@ import static org.mockito.Mockito.*;
 class ExecuteTransferStepTest {
 
     @Mock
-    private AccountRepository accountRepository;
+    private AccountPort accountRepository;
 
     @Mock
-    private BalanceCacheRepository balanceCacheRepository;
+    private BalanceCachePort balanceCacheRepository;
 
     @Mock
-    private TransferRepository transferRepository;
+    private TransferPort transferRepository;
 
     @InjectMocks
     private ExecuteTransferStep executeTransferStep;
@@ -111,22 +111,22 @@ class ExecuteTransferStepTest {
         }
 
         @Test
-        @DisplayName("conta de origem não encontrada → lançar EntityNotFoundException")
-        void givenOriginAccountNotFound_whenExecute_thenThrowsEntityNotFoundException() {
+        @DisplayName("conta de origem não encontrada → lançar AccountNotFoundException")
+        void givenOriginAccountNotFound_whenExecute_thenThrowsAccountNotFoundException() {
             when(accountRepository.findAllByIdsWithLock(anyList())).thenReturn(List.of(destination));
 
             assertThatThrownBy(() -> executeTransferStep.execute(context))
-                    .isInstanceOf(EntityNotFoundException.class)
+                    .isInstanceOf(AccountNotFoundException.class)
                     .hasMessageContaining("acc-origin");
         }
 
         @Test
-        @DisplayName("conta de destino não encontrada → lançar EntityNotFoundException")
-        void givenDestinationAccountNotFound_whenExecute_thenThrowsEntityNotFoundException() {
+        @DisplayName("conta de destino não encontrada → lançar AccountNotFoundException")
+        void givenDestinationAccountNotFound_whenExecute_thenThrowsAccountNotFoundException() {
             when(accountRepository.findAllByIdsWithLock(anyList())).thenReturn(List.of(origin));
 
             assertThatThrownBy(() -> executeTransferStep.execute(context))
-                    .isInstanceOf(EntityNotFoundException.class)
+                    .isInstanceOf(AccountNotFoundException.class)
                     .hasMessageContaining("acc-dest");
         }
     }
@@ -161,24 +161,24 @@ class ExecuteTransferStepTest {
         }
 
         @Test
-        @DisplayName("conta de origem não encontrada na compensação → lançar EntityNotFoundException")
-        void givenOriginNotFoundDuringCompensation_whenCompensate_thenThrowsEntityNotFoundException() {
+        @DisplayName("conta de origem não encontrada na compensação → lançar AccountNotFoundException")
+        void givenOriginNotFoundDuringCompensation_whenCompensate_thenThrowsAccountNotFoundException() {
             context.setTransferExecuted(true);
             when(accountRepository.findAllByIdsWithLock(anyList())).thenReturn(List.of(destination));
 
             assertThatThrownBy(() -> executeTransferStep.compensate(context))
-                    .isInstanceOf(EntityNotFoundException.class)
+                    .isInstanceOf(AccountNotFoundException.class)
                     .hasMessageContaining("acc-origin");
         }
 
         @Test
-        @DisplayName("conta de destino não encontrada na compensação → lançar EntityNotFoundException")
-        void givenDestinationNotFoundDuringCompensation_whenCompensate_thenThrowsEntityNotFoundException() {
+        @DisplayName("conta de destino não encontrada na compensação → lançar AccountNotFoundException")
+        void givenDestinationNotFoundDuringCompensation_whenCompensate_thenThrowsAccountNotFoundException() {
             context.setTransferExecuted(true);
             when(accountRepository.findAllByIdsWithLock(anyList())).thenReturn(List.of(origin));
 
             assertThatThrownBy(() -> executeTransferStep.compensate(context))
-                    .isInstanceOf(EntityNotFoundException.class)
+                    .isInstanceOf(AccountNotFoundException.class)
                     .hasMessageContaining("acc-dest");
         }
     }

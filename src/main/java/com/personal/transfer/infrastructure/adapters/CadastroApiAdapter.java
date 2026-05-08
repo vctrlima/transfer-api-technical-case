@@ -2,6 +2,8 @@ package com.personal.transfer.infrastructure.adapters;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personal.transfer.application.dto.CustomerInfo;
+import com.personal.transfer.application.ports.out.CustomerGateway;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
 import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import com.personal.transfer.infrastructure.adapters.feign.CadastroFeignClient;
@@ -15,7 +17,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CadastroApiAdapter implements CadastroApiPort {
+public class CadastroApiAdapter implements CustomerGateway {
 
     private final CadastroFeignClient feignClient;
     private final CustomerCacheRepository customerCacheRepository;
@@ -24,11 +26,12 @@ public class CadastroApiAdapter implements CadastroApiPort {
     @Override
     @CircuitBreaker(name = "cadastro", fallbackMethod = "fetchCustomerFallback")
     @Retry(name = "cadastro")
-    public CustomerResponse fetchCustomer(String customerId) {
+    public CustomerInfo fetchCustomer(String customerId) {
         var cached = customerCacheRepository.get(customerId);
         if (cached.isPresent()) {
             try {
-                return objectMapper.readValue(cached.get(), CustomerResponse.class);
+                CustomerResponse response = objectMapper.readValue(cached.get(), CustomerResponse.class);
+                return toCustomerInfo(response);
             } catch (JsonProcessingException e) {
                 log.warn("Failed to deserialize cached customer for id={}, fetching from API", customerId);
             }
@@ -46,11 +49,15 @@ public class CadastroApiAdapter implements CadastroApiPort {
             log.warn("Failed to serialize customer response for caching, accountId={}", customerId);
         }
 
-        return response;
+        return toCustomerInfo(response);
     }
 
-    public CustomerResponse fetchCustomerFallback(String customerId, Throwable t) {
+    public CustomerInfo fetchCustomerFallback(String customerId, Throwable t) {
         log.error("Circuit breaker activated for Cadastro API, customerId={}, error={}", customerId, t.getMessage());
         throw new ExternalServiceException("Cadastro API is unavailable: " + t.getMessage(), t);
+    }
+
+    private CustomerInfo toCustomerInfo(CustomerResponse response) {
+        return new CustomerInfo(response.id(), response.name(), response.status());
     }
 }

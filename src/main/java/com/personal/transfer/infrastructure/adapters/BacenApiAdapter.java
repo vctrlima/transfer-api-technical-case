@@ -1,5 +1,7 @@
 package com.personal.transfer.infrastructure.adapters;
 
+import com.personal.transfer.application.dto.BacenNotification;
+import com.personal.transfer.application.ports.out.BacenNotificationPort;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
 import com.personal.transfer.infrastructure.adapters.dto.BacenNotifyRequest;
 import com.personal.transfer.infrastructure.adapters.feign.BacenFeignClient;
@@ -13,14 +15,21 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class BacenApiAdapter implements BacenApiPort {
+public class BacenApiAdapter implements BacenNotificationPort {
 
     private final BacenFeignClient feignClient;
 
     @Override
     @CircuitBreaker(name = "bacen", fallbackMethod = "notifyFallback")
     @Retry(name = "bacen")
-    public void notify(BacenNotifyRequest request) {
+    public void notify(BacenNotification notification) {
+        BacenNotifyRequest request = new BacenNotifyRequest(
+                notification.transferId(),
+                notification.originAccountId(),
+                notification.destinationAccountId(),
+                notification.amount(),
+                notification.occurredAt()
+        );
         log.info("Notifying BACEN for transferId={}", request.transferId());
         try {
             feignClient.notify(request);
@@ -34,7 +43,7 @@ public class BacenApiAdapter implements BacenApiPort {
         }
     }
 
-    public void notifyFallback(BacenNotifyRequest request, Throwable t) {
+    public void notifyFallback(BacenNotification request, Throwable t) {
         if (t instanceof BacenRateLimitException e) {
             throw e;
         }

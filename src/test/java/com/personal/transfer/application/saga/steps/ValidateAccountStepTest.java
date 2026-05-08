@@ -1,11 +1,11 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.ports.out.AccountPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.domain.entities.Account;
 import com.personal.transfer.domain.entities.AccountStatus;
 import com.personal.transfer.domain.exceptions.AccountInactiveException;
 import com.personal.transfer.domain.exceptions.InsufficientBalanceException;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 class ValidateAccountStepTest {
 
     @Mock
-    private AccountRepository accountRepository;
+    private AccountPort accountRepository;
 
     @InjectMocks
     private ValidateAccountStep validateAccountStep;

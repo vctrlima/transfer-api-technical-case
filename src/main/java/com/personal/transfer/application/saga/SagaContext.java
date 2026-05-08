@@ -1,8 +1,8 @@
 package com.personal.transfer.application.saga;
 
+import com.personal.transfer.application.dto.CustomerInfo;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
-import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import lombok.Builder;
 import lombok.Data;
 
@@ -19,7 +19,7 @@ public class SagaContext {
     private String idempotencyKey;
     private String description;
 
-    private CustomerResponse customer;
+    private CustomerInfo customer;
     private boolean transferExecuted;
     private Transfer pendingTransfer;
 

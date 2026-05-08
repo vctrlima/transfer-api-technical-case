@@ -2,6 +2,8 @@ package com.personal.transfer.infrastructure.sqs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personal.transfer.application.dto.BacenTransferEvent;
+import com.personal.transfer.application.ports.out.BacenEventPublisherPort;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +15,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class BacenEventPublisher {
+public class BacenEventPublisher implements BacenEventPublisherPort {
 
     private final SqsClient sqsClient;
     private final ObjectMapper objectMapper;
@@ -21,6 +23,7 @@ public class BacenEventPublisher {
     @Value("${aws.sqs.queue-url}")
     private String queueUrl;
 
+    @Override
     public void publish(BacenTransferEvent event) {
         try {
             String messageBody = objectMapper.writeValueAsString(event);

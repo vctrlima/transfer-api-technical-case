@@ -1,6 +1,7 @@
 package com.personal.transfer.infrastructure.adapters;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personal.transfer.application.dto.CustomerInfo;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
 import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import com.personal.transfer.infrastructure.adapters.feign.CadastroFeignClient;
@@ -81,15 +82,15 @@ class CadastroApiAdapterTest {
     class FetchFromApi {
 
         @Test
-        @DisplayName("resposta válida da API → retorna CustomerResponse e armazena no cache")
+        @DisplayName("resposta válida da API → retorna CustomerInfo e armazena no cache")
         void givenValidApiResponse_whenFetchCustomer_thenReturnsCustomerAndCachesIt() throws Exception {
             var customer = new CustomerResponse("acc-001", "Victor Lima", "ACTIVE");
             when(customerCacheRepository.get("acc-001")).thenReturn(Optional.empty());
             when(cadastroFeignClient.getCustomer("acc-001")).thenReturn(customer);
 
-            CustomerResponse result = cadastroApiAdapter.fetchCustomer("acc-001");
+            CustomerInfo result = cadastroApiAdapter.fetchCustomer("acc-001");
 
-            assertThat(result).isEqualTo(customer);
+            assertThat(result).isEqualTo(new CustomerInfo("acc-001", "Victor Lima", "ACTIVE"));
             verify(customerCacheRepository).put(eq("acc-001"), anyString());
         }
 
@@ -125,11 +126,11 @@ class CadastroApiAdapterTest {
         @Test
         @DisplayName("cache hit com JSON válido → retorna do cache sem chamar a API")
         void givenCachedCustomer_whenFetchCustomer_thenReturnsCachedValueWithoutCallingApi() throws Exception {
-            var customer = new CustomerResponse("acc-001", "Victor Lima", "ACTIVE");
+            var customer = new CustomerInfo("acc-001", "Victor Lima", "ACTIVE");
             String json = objectMapper.writeValueAsString(customer);
             when(customerCacheRepository.get("acc-001")).thenReturn(Optional.of(json));
 
-            CustomerResponse result = cadastroApiAdapter.fetchCustomer("acc-001");
+            CustomerInfo result = cadastroApiAdapter.fetchCustomer("acc-001");
 
             assertThat(result).isEqualTo(customer);
             verifyNoInteractions(cadastroFeignClient);
@@ -142,9 +143,9 @@ class CadastroApiAdapterTest {
             when(customerCacheRepository.get("acc-001")).thenReturn(Optional.of("not-valid-json"));
             when(cadastroFeignClient.getCustomer("acc-001")).thenReturn(customer);
 
-            CustomerResponse result = cadastroApiAdapter.fetchCustomer("acc-001");
+            CustomerInfo result = cadastroApiAdapter.fetchCustomer("acc-001");
 
-            assertThat(result).isEqualTo(customer);
+            assertThat(result).isEqualTo(new CustomerInfo("acc-001", "Victor Lima", "ACTIVE"));
             verify(cadastroFeignClient).getCustomer("acc-001");
         }
 
@@ -155,9 +156,9 @@ class CadastroApiAdapterTest {
             when(customerCacheRepository.get("acc-001")).thenReturn(Optional.empty());
             when(cadastroFeignClient.getCustomer("acc-001")).thenReturn(customer);
 
-            CustomerResponse result = cadastroApiAdapter.fetchCustomer("acc-001");
+            CustomerInfo result = cadastroApiAdapter.fetchCustomer("acc-001");
 
-            assertThat(result).isEqualTo(customer);
+            assertThat(result).isEqualTo(new CustomerInfo("acc-001", "Victor Lima", "ACTIVE"));
             verify(cadastroFeignClient).getCustomer("acc-001");
         }
     }

@@ -1,10 +1,9 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.dto.CustomerInfo;
+import com.personal.transfer.application.ports.out.CustomerGateway;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.SagaStep;
-import com.personal.transfer.domain.exceptions.ExternalServiceException;
-import com.personal.transfer.infrastructure.adapters.CadastroApiPort;
-import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,12 +13,12 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class FetchCustomerStep implements SagaStep<SagaContext> {
 
-    private final CadastroApiPort cadastroApiPort;
+    private final CustomerGateway customerGateway;
 
     @Override
     public void execute(SagaContext context) {
         log.info("[SAGA][Step1:FetchCustomer] Iniciando para transferId={}", context.getTransferId());
-        CustomerResponse customer = cadastroApiPort.fetchCustomer(context.getOriginAccountId());
+        CustomerInfo customer = customerGateway.fetchCustomer(context.getOriginAccountId());
         context.setCustomer(customer);
         log.info("[SAGA][Step1:FetchCustomer] Concluído para transferId={}, customerId={}", context.getTransferId(), customer.id());
     }

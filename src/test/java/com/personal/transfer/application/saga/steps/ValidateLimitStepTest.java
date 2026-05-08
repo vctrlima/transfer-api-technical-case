@@ -1,8 +1,8 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.ports.out.DailyLimitPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.domain.exceptions.DailyLimitExceededException;
-import com.personal.transfer.infrastructure.redis.DailyLimitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +25,7 @@ import static org.mockito.Mockito.when;
 class ValidateLimitStepTest {
 
     @Mock
-    private DailyLimitRepository dailyLimitRepository;
+    private DailyLimitPort dailyLimitRepository;
 
     @InjectMocks
     private ValidateLimitStep validateLimitStep;

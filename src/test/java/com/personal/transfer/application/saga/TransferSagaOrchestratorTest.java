@@ -1,12 +1,12 @@
 package com.personal.transfer.application.saga;
 
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.application.saga.steps.*;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
 import com.personal.transfer.domain.exceptions.AccountInactiveException;
 import com.personal.transfer.domain.exceptions.DailyLimitExceededException;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ class TransferSagaOrchestratorTest {
     @Mock
     private PublishBacenEventStep publishBacenEventStep;
     @Mock
-    private TransferRepository transferRepository;
+    private TransferPort transferRepository;
 
     @InjectMocks
     private TransferSagaOrchestrator orchestrator;

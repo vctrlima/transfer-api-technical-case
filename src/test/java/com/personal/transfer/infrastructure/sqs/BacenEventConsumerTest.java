@@ -3,12 +3,13 @@ package com.personal.transfer.infrastructure.sqs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.personal.transfer.application.dto.BacenNotification;
+import com.personal.transfer.application.dto.BacenTransferEvent;
+import com.personal.transfer.application.ports.out.BacenNotificationPort;
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
-import com.personal.transfer.infrastructure.adapters.BacenApiPort;
 import com.personal.transfer.infrastructure.adapters.BacenRateLimitException;
-import com.personal.transfer.infrastructure.adapters.dto.BacenNotifyRequest;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -42,10 +43,10 @@ class BacenEventConsumerTest {
     private SqsClient sqsClient;
 
     @Mock
-    private BacenApiPort bacenApiPort;
+    private BacenNotificationPort bacenApiPort;
 
     @Mock
-    private TransferRepository transferRepository;
+    private TransferPort transferRepository;
 
     @InjectMocks
     private BacenEventConsumer bacenEventConsumer;
@@ -92,7 +93,7 @@ class BacenEventConsumerTest {
                     .id("t-001").status(TransferStatus.PROCESSING).build();
             when(transferRepository.findById("t-001")).thenReturn(Optional.of(transfer));
             when(transferRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            doNothing().when(bacenApiPort).notify(any(BacenNotifyRequest.class));
+            doNothing().when(bacenApiPort).notify(any(BacenNotification.class));
 
             bacenEventConsumer.consume();
 
@@ -131,7 +132,7 @@ class BacenEventConsumerTest {
 
             when(transferRepository.findById("t-rate-limited")).thenReturn(Optional.empty());
             doThrow(new BacenRateLimitException("Rate limit exceeded"))
-                    .when(bacenApiPort).notify(any(BacenNotifyRequest.class));
+                    .when(bacenApiPort).notify(any(BacenNotification.class));
 
             bacenEventConsumer.consume();
 
@@ -146,7 +147,7 @@ class BacenEventConsumerTest {
 
             when(transferRepository.findById("t-error")).thenReturn(Optional.empty());
             doThrow(new RuntimeException("Connection refused"))
-                    .when(bacenApiPort).notify(any(BacenNotifyRequest.class));
+                    .when(bacenApiPort).notify(any(BacenNotification.class));
 
             bacenEventConsumer.consume();
 
@@ -154,4 +155,3 @@ class BacenEventConsumerTest {
         }
     }
 }
-

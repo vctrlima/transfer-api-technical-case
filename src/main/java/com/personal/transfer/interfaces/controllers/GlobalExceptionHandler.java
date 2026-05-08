@@ -1,11 +1,7 @@
 package com.personal.transfer.interfaces.controllers;
 
-import com.personal.transfer.domain.exceptions.AccountInactiveException;
-import com.personal.transfer.domain.exceptions.DailyLimitExceededException;
-import com.personal.transfer.domain.exceptions.ExternalServiceException;
-import com.personal.transfer.domain.exceptions.InsufficientBalanceException;
+import com.personal.transfer.domain.exceptions.*;
 import com.personal.transfer.interfaces.dto.ErrorResponse;
-import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -54,8 +50,8 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of("DAILY_LIMIT_EXCEEDED", ex.getMessage()));
     }
 
-    @ExceptionHandler(EntityNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleEntityNotFound(EntityNotFoundException ex) {
+    @ExceptionHandler({AccountNotFoundException.class, TransferNotFoundException.class})
+    public ResponseEntity<ErrorResponse> handleEntityNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
                 .body(ErrorResponse.of("ENTITY_NOT_FOUND", ex.getMessage()));
     }

@@ -1,12 +1,12 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.ports.out.AccountPort;
+import com.personal.transfer.application.ports.out.BalanceCachePort;
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.SagaStep;
 import com.personal.transfer.domain.entities.Account;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
-import com.personal.transfer.infrastructure.redis.BalanceCacheRepository;
-import jakarta.persistence.EntityNotFoundException;
+import com.personal.transfer.domain.exceptions.AccountNotFoundException;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,9 +22,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ExecuteTransferStep implements SagaStep<SagaContext> {
 
-    private final AccountRepository accountRepository;
-    private final BalanceCacheRepository balanceCacheRepository;
-    private final TransferRepository transferRepository;
+    private final AccountPort accountPort;
+    private final BalanceCachePort balanceCachePort;
+    private final TransferPort transferPort;
 
     /**
      * Executes debit/credit and persists the Transfer record in ONE transaction.
@@ -44,23 +44,23 @@ public class ExecuteTransferStep implements SagaStep<SagaContext> {
 
         Account origin = byId.get(context.getOriginAccountId());
         if (origin == null) {
-            throw new EntityNotFoundException("Origin account not found: " + context.getOriginAccountId());
+            throw new AccountNotFoundException(context.getOriginAccountId());
         }
         Account destination = byId.get(context.getDestinationAccountId());
         if (destination == null) {
-            throw new EntityNotFoundException("Destination account not found: " + context.getDestinationAccountId());
+            throw new AccountNotFoundException(context.getDestinationAccountId());
         }
 
         origin.debit(context.getAmount());
         destination.credit(context.getAmount());
 
-        accountRepository.saveAll(List.of(origin, destination));
+        accountPort.saveAll(List.of(origin, destination));
 
         if (context.getPendingTransfer() != null) {
-            transferRepository.save(context.getPendingTransfer());
+            transferPort.save(context.getPendingTransfer());
         }
 
-        balanceCacheRepository.evictAll(context.getOriginAccountId(), context.getDestinationAccountId());
+        balanceCachePort.evictAll(context.getOriginAccountId(), context.getDestinationAccountId());
 
         context.setTransferExecuted(true);
         log.info("[SAGA][Step4:ExecuteTransfer] Débito/crédito concluído para transferId={}", context.getTransferId());
@@ -81,24 +81,24 @@ public class ExecuteTransferStep implements SagaStep<SagaContext> {
 
         Account origin = byId.get(context.getOriginAccountId());
         if (origin == null) {
-            throw new EntityNotFoundException("Origin account not found during compensation: " + context.getOriginAccountId());
+            throw new AccountNotFoundException(context.getOriginAccountId());
         }
         Account destination = byId.get(context.getDestinationAccountId());
         if (destination == null) {
-            throw new EntityNotFoundException("Destination account not found during compensation: " + context.getDestinationAccountId());
+            throw new AccountNotFoundException(context.getDestinationAccountId());
         }
 
         origin.credit(context.getAmount());
         destination.debit(context.getAmount());
 
-        accountRepository.saveAll(List.of(origin, destination));
-        balanceCacheRepository.evictAll(context.getOriginAccountId(), context.getDestinationAccountId());
+        accountPort.saveAll(List.of(origin, destination));
+        balanceCachePort.evictAll(context.getOriginAccountId(), context.getDestinationAccountId());
 
         log.info("[SAGA][Step4:ExecuteTransfer][Compensate] Rollback concluído para transferId={}", context.getTransferId());
     }
 
     private Map<String, Account> fetchAccountsWithLock(String originId, String destinationId) {
-        return accountRepository.findAllByIdsWithLock(List.of(originId, destinationId))
+        return accountPort.findAllByIdsWithLock(List.of(originId, destinationId))
                 .stream()
                 .collect(Collectors.toMap(Account::getId, Function.identity()));
     }

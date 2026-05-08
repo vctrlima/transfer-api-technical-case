@@ -1,16 +1,13 @@
 package com.personal.transfer.application.usecases;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personal.transfer.application.dto.BalanceResult;
+import com.personal.transfer.application.dto.CustomerInfo;
+import com.personal.transfer.application.ports.out.AccountPort;
+import com.personal.transfer.application.ports.out.BalanceCachePort;
+import com.personal.transfer.application.ports.out.CustomerGateway;
+import com.personal.transfer.application.ports.out.DailyLimitPort;
 import com.personal.transfer.domain.entities.Account;
-import com.personal.transfer.domain.exceptions.AccountInactiveException;
-import com.personal.transfer.infrastructure.adapters.CadastroApiPort;
-import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
-import com.personal.transfer.infrastructure.redis.BalanceCacheRepository;
-import com.personal.transfer.infrastructure.redis.DailyLimitRepository;
-import com.personal.transfer.interfaces.dto.BalanceResponse;
-import jakarta.persistence.EntityNotFoundException;
+import com.personal.transfer.domain.exceptions.AccountNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,40 +20,33 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class BalanceUseCase {
 
-    private final AccountRepository accountRepository;
-    private final BalanceCacheRepository balanceCacheRepository;
-    private final DailyLimitRepository dailyLimitRepository;
-    private final CadastroApiPort cadastroApiPort;
-    private final ObjectMapper objectMapper;
+    private final AccountPort accountPort;
+    private final BalanceCachePort balanceCachePort;
+    private final DailyLimitPort dailyLimitPort;
+    private final CustomerGateway customerGateway;
 
     @Value("${transfer.daily-limit:1000.00}")
     private BigDecimal dailyLimit;
 
-    public BalanceResponse getBalance(String accountId) {
-        var cached = balanceCacheRepository.get(accountId);
+    public BalanceResult getBalance(String accountId) {
+        var cached = balanceCachePort.get(accountId);
         if (cached.isPresent()) {
             log.debug("Balance cache hit for accountId={}", accountId);
-            try {
-                return objectMapper.readValue(cached.get(), BalanceResponse.class);
-            } catch (JsonProcessingException e) {
-                log.warn("Failed to deserialize cached balance for accountId={}, fetching from DB", accountId);
-            }
+            return cached.get();
         }
 
         log.debug("Balance cache miss for accountId={}, fetching from DB", accountId);
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new EntityNotFoundException("Account not found: " + accountId));
+        Account account = accountPort.findById(accountId)
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
-        if (!account.isActive()) {
-            throw new AccountInactiveException(accountId);
-        }
+        account.ensureActive();
 
-        CustomerResponse customer = cadastroApiPort.fetchCustomer(accountId);
+        CustomerInfo customer = customerGateway.fetchCustomer(accountId);
 
-        BigDecimal dailyLimitUsed = dailyLimitRepository.getAccumulated(accountId);
+        BigDecimal dailyLimitUsed = dailyLimitPort.getAccumulated(accountId);
         BigDecimal dailyLimitRemaining = dailyLimit.subtract(dailyLimitUsed).max(BigDecimal.ZERO);
 
-        BalanceResponse response = new BalanceResponse(
+        BalanceResult response = new BalanceResult(
                 account.getId(),
                 customer.name(),
                 account.getBalance(),
@@ -66,11 +56,7 @@ public class BalanceUseCase {
                 account.getUpdatedAt()
         );
 
-        try {
-            balanceCacheRepository.put(accountId, objectMapper.writeValueAsString(response));
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to cache balance for accountId={}", accountId);
-        }
+        balanceCachePort.put(accountId, response);
 
         return response;
     }

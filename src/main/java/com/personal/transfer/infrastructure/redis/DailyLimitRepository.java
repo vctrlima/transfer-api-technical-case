@@ -1,5 +1,6 @@
 package com.personal.transfer.infrastructure.redis;
 
+import com.personal.transfer.application.ports.out.DailyLimitPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisCallback;
@@ -16,7 +17,7 @@ import java.util.List;
 @Slf4j
 @Repository
 @RequiredArgsConstructor
-public class DailyLimitRepository {
+public class DailyLimitRepository implements DailyLimitPort {
 
     private static final String KEY_PREFIX = "limit::";
     private static final Duration TTL = Duration.ofHours(48);
@@ -30,6 +31,7 @@ public class DailyLimitRepository {
      * instead of two sequential commands.
      * Returns the new accumulated value in full currency units (e.g., BRL).
      */
+    @Override
     public BigDecimal incrementAndGet(String accountId, BigDecimal amount) {
         String key = buildKey(accountId);
         long amountInCents = toCents(amount);
@@ -49,6 +51,7 @@ public class DailyLimitRepository {
     /**
      * Decrements the daily limit counter (used in SAGA compensation).
      */
+    @Override
     public void decrement(String accountId, BigDecimal amount) {
         String key = buildKey(accountId);
         long amountInCents = toCents(amount);
@@ -59,6 +62,7 @@ public class DailyLimitRepository {
     /**
      * Returns current accumulated value for today.
      */
+    @Override
     public BigDecimal getAccumulated(String accountId) {
         String key = buildKey(accountId);
         String value = redisTemplate.opsForValue().get(key);

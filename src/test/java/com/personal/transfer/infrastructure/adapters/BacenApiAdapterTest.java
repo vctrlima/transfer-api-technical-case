@@ -1,7 +1,7 @@
 package com.personal.transfer.infrastructure.adapters;
 
+import com.personal.transfer.application.dto.BacenNotification;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
-import com.personal.transfer.infrastructure.adapters.dto.BacenNotifyRequest;
 import com.personal.transfer.infrastructure.adapters.feign.BacenFeignClient;
 import com.personal.transfer.infrastructure.sqs.BacenEventConsumer;
 import feign.FeignException;
@@ -55,11 +55,11 @@ class BacenApiAdapterTest {
     @Autowired
     CircuitBreakerRegistry circuitBreakerRegistry;
 
-    private BacenNotifyRequest request;
+    private BacenNotification request;
 
     @BeforeEach
     void setUp() {
-        request = new BacenNotifyRequest(
+        request = new BacenNotification(
                 "t-001", "acc-origin-001", "acc-dest-001",
                 new BigDecimal("200.00"), LocalDateTime.now()
         );
@@ -144,4 +144,3 @@ class BacenApiAdapterTest {
         }
     }
 }
-

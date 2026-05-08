@@ -1,5 +1,7 @@
 package com.personal.transfer.application.usecases;
 
+import com.personal.transfer.application.dto.TransferResult;
+import com.personal.transfer.application.ports.out.IdempotencyPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.TransferSagaOrchestrator;
 import com.personal.transfer.domain.entities.Transfer;
@@ -14,12 +16,18 @@ import org.springframework.stereotype.Service;
 public class TransferUseCase {
 
     private final TransferSagaOrchestrator sagaOrchestrator;
+    private final IdempotencyPort idempotencyPort;
 
-    public Transfer execute(String originAccountId,
-                            String destinationAccountId,
-                            Money amount,
-                            String idempotencyKey,
-                            String description) {
+    public TransferResult execute(String originAccountId,
+                                  String destinationAccountId,
+                                  Money amount,
+                                  String idempotencyKey,
+                                  String description) {
+        var cached = idempotencyPort.findTransferResult(idempotencyKey);
+        if (cached.isPresent()) {
+            log.info("Idempotent response returned for key={}", idempotencyKey);
+            return cached.get();
+        }
 
         SagaContext context = SagaContext.builder()
                 .originAccountId(originAccountId)
@@ -29,6 +37,9 @@ public class TransferUseCase {
                 .description(description)
                 .build();
 
-        return sagaOrchestrator.execute(context);
+        Transfer transfer = sagaOrchestrator.execute(context);
+        TransferResult response = TransferResult.from(transfer);
+        idempotencyPort.saveTransferResult(idempotencyKey, response);
+        return response;
     }
 }

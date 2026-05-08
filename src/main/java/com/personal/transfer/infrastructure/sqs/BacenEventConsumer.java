@@ -1,15 +1,17 @@
 package com.personal.transfer.infrastructure.sqs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.personal.transfer.application.dto.BacenNotification;
+import com.personal.transfer.application.dto.BacenTransferEvent;
+import com.personal.transfer.application.ports.out.BacenNotificationPort;
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
-import com.personal.transfer.infrastructure.adapters.BacenApiPort;
 import com.personal.transfer.infrastructure.adapters.BacenRateLimitException;
-import com.personal.transfer.infrastructure.adapters.dto.BacenNotifyRequest;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -22,12 +24,13 @@ import java.util.Optional;
 
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "aws.sqs.consumer.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class BacenEventConsumer {
 
     private final SqsClient sqsClient;
-    private final BacenApiPort bacenApiPort;
-    private final TransferRepository transferRepository;
+    private final BacenNotificationPort bacenNotificationPort;
+    private final TransferPort transferPort;
     private final ObjectMapper objectMapper;
 
     @Value("${aws.sqs.queue-url}")
@@ -53,14 +56,14 @@ public class BacenEventConsumer {
             BacenTransferEvent event = objectMapper.readValue(message.body(), BacenTransferEvent.class);
             log.info("Processing BACEN notification for transferId={}", event.transferId());
 
-            Optional<Transfer> existingTransfer = transferRepository.findById(event.transferId());
+            Optional<Transfer> existingTransfer = transferPort.findById(event.transferId());
             if (existingTransfer.isPresent() && TransferStatus.COMPLETED.equals(existingTransfer.get().getStatus())) {
                 log.info("Transfer already completed (idempotent skip) transferId={}", event.transferId());
                 deleteMessage(message);
                 return;
             }
 
-            BacenNotifyRequest notifyRequest = new BacenNotifyRequest(
+            BacenNotification notifyRequest = new BacenNotification(
                     event.transferId(),
                     event.originAccountId(),
                     event.destinationAccountId(),
@@ -68,7 +71,7 @@ public class BacenEventConsumer {
                     event.occurredAt()
             );
 
-            bacenApiPort.notify(notifyRequest);
+            bacenNotificationPort.notify(notifyRequest);
 
             updateTransferStatus(event.transferId());
             deleteMessage(message);
@@ -90,9 +93,9 @@ public class BacenEventConsumer {
     }
 
     private void updateTransferStatus(String transferId) {
-        transferRepository.findById(transferId).ifPresent(transfer -> {
-            transfer.setStatus(TransferStatus.COMPLETED);
-            transferRepository.save(transfer);
+        transferPort.findById(transferId).ifPresent(transfer -> {
+            transfer.markAs(TransferStatus.COMPLETED);
+            transferPort.save(transfer);
         });
     }
 }

@@ -1,18 +1,15 @@
 package com.personal.transfer.application.usecases;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.personal.transfer.application.dto.BalanceResult;
+import com.personal.transfer.application.dto.CustomerInfo;
+import com.personal.transfer.application.ports.out.AccountPort;
+import com.personal.transfer.application.ports.out.BalanceCachePort;
+import com.personal.transfer.application.ports.out.CustomerGateway;
+import com.personal.transfer.application.ports.out.DailyLimitPort;
 import com.personal.transfer.domain.entities.Account;
 import com.personal.transfer.domain.entities.AccountStatus;
 import com.personal.transfer.domain.exceptions.AccountInactiveException;
-import com.personal.transfer.infrastructure.adapters.CadastroApiPort;
-import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
-import com.personal.transfer.infrastructure.redis.BalanceCacheRepository;
-import com.personal.transfer.infrastructure.redis.DailyLimitRepository;
-import com.personal.transfer.interfaces.dto.BalanceResponse;
-import jakarta.persistence.EntityNotFoundException;
+import com.personal.transfer.domain.exceptions.AccountNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,16 +35,16 @@ import static org.mockito.Mockito.when;
 class BalanceUseCaseTest {
 
     @Mock
-    private AccountRepository accountRepository;
+    private AccountPort accountRepository;
 
     @Mock
-    private BalanceCacheRepository balanceCacheRepository;
+    private BalanceCachePort balanceCacheRepository;
 
     @Mock
-    private DailyLimitRepository dailyLimitRepository;
+    private DailyLimitPort dailyLimitRepository;
 
     @Mock
-    private CadastroApiPort cadastroApiPort;
+    private CustomerGateway cadastroApiPort;
 
     @InjectMocks
     private BalanceUseCase balanceUseCase;
@@ -55,10 +52,6 @@ class BalanceUseCaseTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(balanceUseCase, "dailyLimit", new BigDecimal("1000.00"));
-        ReflectionTestUtils.setField(balanceUseCase, "objectMapper",
-                new ObjectMapper()
-                        .registerModule(new JavaTimeModule())
-                        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS));
         when(balanceCacheRepository.get(anyString())).thenReturn(Optional.empty());
     }
 
@@ -100,12 +93,12 @@ class BalanceUseCaseTest {
         }
 
         @Test
-        @DisplayName("conta não encontrada → lançar EntityNotFoundException")
-        void givenNonExistentAccount_whenGetBalance_thenThrowsEntityNotFoundException() {
+        @DisplayName("conta não encontrada → lançar AccountNotFoundException")
+        void givenNonExistentAccount_whenGetBalance_thenThrowsAccountNotFoundException() {
             when(accountRepository.findById("acc-unknown")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> balanceUseCase.getBalance("acc-unknown"))
-                    .isInstanceOf(EntityNotFoundException.class)
+                    .isInstanceOf(AccountNotFoundException.class)
                     .hasMessageContaining("acc-unknown");
         }
     }
@@ -120,10 +113,10 @@ class BalanceUseCaseTest {
             Account account = buildAccount("acc-001", AccountStatus.ACTIVE, new BigDecimal("1500.00"));
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
             when(cadastroApiPort.fetchCustomer("acc-001"))
-                    .thenReturn(new CustomerResponse("acc-001", "Victor Lima", "ACTIVE"));
+                    .thenReturn(new CustomerInfo("acc-001", "Victor Lima", "ACTIVE"));
             when(dailyLimitRepository.getAccumulated("acc-001")).thenReturn(new BigDecimal("200.00"));
 
-            BalanceResponse response = balanceUseCase.getBalance("acc-001");
+            BalanceResult response = balanceUseCase.getBalance("acc-001");
 
             assertThat(response.accountId()).isEqualTo("acc-001");
             assertThat(response.customerName()).isEqualTo("Victor Lima");
@@ -138,10 +131,10 @@ class BalanceUseCaseTest {
             Account account = buildAccount("acc-001", AccountStatus.ACTIVE, new BigDecimal("500.00"));
             when(accountRepository.findById("acc-001")).thenReturn(Optional.of(account));
             when(cadastroApiPort.fetchCustomer("acc-001"))
-                    .thenReturn(new CustomerResponse("acc-001", "Victor Lima", "ACTIVE"));
+                    .thenReturn(new CustomerInfo("acc-001", "Victor Lima", "ACTIVE"));
             when(dailyLimitRepository.getAccumulated("acc-001")).thenReturn(new BigDecimal("1000.00"));
 
-            BalanceResponse response = balanceUseCase.getBalance("acc-001");
+            BalanceResult response = balanceUseCase.getBalance("acc-001");
 
             assertThat(response.dailyLimitRemaining()).isEqualByComparingTo("0.00");
         }
@@ -154,18 +147,15 @@ class BalanceUseCaseTest {
         @Test
         @DisplayName("cache hit → retornar sem chamar DB ou Cadastro")
         void givenCacheHit_whenGetBalance_thenReturnsCachedResponseWithoutDbOrApiCall() throws Exception {
-            BalanceResponse cached = new BalanceResponse(
+            BalanceResult cached = new BalanceResult(
                     "acc-001", "Victor Lima",
                     new BigDecimal("1500.00"), new BigDecimal("1000.00"),
                     new BigDecimal("200.00"), new BigDecimal("800.00"),
                     LocalDateTime.now()
             );
-            ObjectMapper mapper = new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-            when(balanceCacheRepository.get("acc-001")).thenReturn(Optional.of(mapper.writeValueAsString(cached)));
+            when(balanceCacheRepository.get("acc-001")).thenReturn(Optional.of(cached));
 
-            BalanceResponse response = balanceUseCase.getBalance("acc-001");
+            BalanceResult response = balanceUseCase.getBalance("acc-001");
 
             assertThat(response.customerName()).isEqualTo("Victor Lima");
             assertThat(response.balance()).isEqualByComparingTo("1500.00");
@@ -173,4 +163,3 @@ class BalanceUseCaseTest {
         }
     }
 }
-

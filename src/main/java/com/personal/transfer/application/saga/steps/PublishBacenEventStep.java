@@ -1,9 +1,9 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.dto.BacenTransferEvent;
+import com.personal.transfer.application.ports.out.BacenEventPublisherPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.SagaStep;
-import com.personal.transfer.infrastructure.sqs.BacenEventPublisher;
-import com.personal.transfer.infrastructure.sqs.BacenTransferEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PublishBacenEventStep implements SagaStep<SagaContext> {
 
-    private final BacenEventPublisher bacenEventPublisher;
+    private final BacenEventPublisherPort bacenEventPublisher;
 
     @Override
     public void execute(SagaContext context) {

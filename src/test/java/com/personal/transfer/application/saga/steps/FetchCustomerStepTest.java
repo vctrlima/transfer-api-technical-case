@@ -1,8 +1,8 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.dto.CustomerInfo;
+import com.personal.transfer.application.ports.out.CustomerGateway;
 import com.personal.transfer.application.saga.SagaContext;
-import com.personal.transfer.infrastructure.adapters.CadastroApiPort;
-import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,7 +21,7 @@ import static org.mockito.Mockito.*;
 class FetchCustomerStepTest {
 
     @Mock
-    private CadastroApiPort cadastroApiPort;
+    private CustomerGateway cadastroApiPort;
 
     @InjectMocks
     private FetchCustomerStep fetchCustomerStep;
@@ -39,7 +39,7 @@ class FetchCustomerStepTest {
     @DisplayName("execute → busca cliente por originAccountId e armazena no contexto")
     void givenValidAccount_whenExecute_thenFetchesCustomerAndSetsInContext() {
         SagaContext context = buildContext();
-        CustomerResponse customer = new CustomerResponse("acc-origin", "Victor Lima", "ACTIVE");
+        CustomerInfo customer = new CustomerInfo("acc-origin", "Victor Lima", "ACTIVE");
         when(cadastroApiPort.fetchCustomer("acc-origin")).thenReturn(customer);
 
         assertThatCode(() -> fetchCustomerStep.execute(context)).doesNotThrowAnyException();

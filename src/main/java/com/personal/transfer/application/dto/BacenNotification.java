@@ -1,9 +1,9 @@
-package com.personal.transfer.infrastructure.sqs;
+package com.personal.transfer.application.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public record BacenTransferEvent(
+public record BacenNotification(
         String transferId,
         String originAccountId,
         String destinationAccountId,

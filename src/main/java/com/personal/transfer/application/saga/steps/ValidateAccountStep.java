@@ -1,12 +1,10 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.ports.out.AccountPort;
 import com.personal.transfer.application.saga.SagaContext;
 import com.personal.transfer.application.saga.SagaStep;
 import com.personal.transfer.domain.entities.Account;
-import com.personal.transfer.domain.exceptions.AccountInactiveException;
-import com.personal.transfer.domain.exceptions.InsufficientBalanceException;
-import com.personal.transfer.infrastructure.persistence.AccountRepository;
-import jakarta.persistence.EntityNotFoundException;
+import com.personal.transfer.domain.exceptions.AccountNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -21,13 +19,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ValidateAccountStep implements SagaStep<SagaContext> {
 
-    private final AccountRepository accountRepository;
+    private final AccountPort accountPort;
 
     @Override
     public void execute(SagaContext context) {
         log.info("[SAGA][Step2:ValidateAccount] Iniciando para transferId={}", context.getTransferId());
 
-        List<Account> accounts = accountRepository.findAllByIds(
+        List<Account> accounts = accountPort.findAllByIds(
                 List.of(context.getOriginAccountId(), context.getDestinationAccountId()));
 
         Map<String, Account> byId = accounts.stream()
@@ -35,25 +33,18 @@ public class ValidateAccountStep implements SagaStep<SagaContext> {
 
         Account origin = byId.get(context.getOriginAccountId());
         if (origin == null) {
-            throw new EntityNotFoundException("Origin account not found: " + context.getOriginAccountId());
+            throw new AccountNotFoundException(context.getOriginAccountId());
         }
 
-        if (!origin.isActive()) {
-            throw new AccountInactiveException(context.getOriginAccountId());
-        }
-
-        if (!origin.hasSufficientBalance(context.getAmount())) {
-            throw new InsufficientBalanceException(origin.getBalance(), context.getAmount());
-        }
+        origin.ensureActive();
+        origin.ensureSufficientBalance(context.getAmount());
 
         Account destination = byId.get(context.getDestinationAccountId());
         if (destination == null) {
-            throw new EntityNotFoundException("Destination account not found: " + context.getDestinationAccountId());
+            throw new AccountNotFoundException(context.getDestinationAccountId());
         }
 
-        if (!destination.isActive()) {
-            throw new AccountInactiveException(context.getDestinationAccountId());
-        }
+        destination.ensureActive();
 
         log.info("[SAGA][Step2:ValidateAccount] Validação aprovada para transferId={}", context.getTransferId());
     }

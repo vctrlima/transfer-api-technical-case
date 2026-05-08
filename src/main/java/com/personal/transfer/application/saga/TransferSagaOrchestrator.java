@@ -1,15 +1,14 @@
 package com.personal.transfer.application.saga;
 
+import com.personal.transfer.application.ports.out.TransferPort;
 import com.personal.transfer.application.saga.steps.*;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
-import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -26,7 +25,7 @@ public class TransferSagaOrchestrator {
     private final ValidateLimitStep validateLimitStep;
     private final ExecuteTransferStep executeTransferStep;
     private final PublishBacenEventStep publishBacenEventStep;
-    private final TransferRepository transferRepository;
+    private final TransferPort transferPort;
 
     /**
      * Virtual-thread executor for parallel steps 2+3.
@@ -38,8 +37,8 @@ public class TransferSagaOrchestrator {
     /**
      * Executes the SAGA:
      * 1. ValidateAccount    — batch DB read, fail-fast pre-check (no lock, no Transfer record yet)
-     * 2. ValidateLimit  ┐   — Redis pipeline INCRBY+EXPIRE
-     * 3. FetchCustomer  ┘   — HTTP to Cadastro API (cached in Redis)
+     * 2. ValidateLimit  ┐   — daily-limit port
+     * 3. FetchCustomer  ┘   — customer gateway
      * 4. [Persist Transfer] — DB INSERT only after all validations pass; rejected requests produce ZERO DB writes
      * 5. ExecuteTransfer    — single batch SELECT FOR UPDATE + saveAll
      * 6. PublishBacenEvent  — sync SQS; on failure rollbacks step 5 + step 2
@@ -87,7 +86,7 @@ public class TransferSagaOrchestrator {
             }
 
             if (limitSucceeded && customerError != null) {
-                log.error("[SAGA][Step3:FetchCustomer] Falha — compensando limite Redis. transferId={}", transferId);
+                log.error("[SAGA][Step3:FetchCustomer] Falha — compensando limite diário. transferId={}", transferId);
                 try {
                     validateLimitStep.compensate(context);
                 } catch (Exception ce2) {
@@ -107,17 +106,14 @@ public class TransferSagaOrchestrator {
             throw new ExternalServiceException("Parallel step error: " + cause.getMessage(), cause);
         }
 
-        Transfer transfer = Transfer.builder()
-                .id(transferId)
-                .originAccountId(context.getOriginAccountId())
-                .destinationAccountId(context.getDestinationAccountId())
-                .amount(context.getAmount())
-                .status(TransferStatus.PROCESSING)
-                .idempotencyKey(context.getIdempotencyKey())
-                .description(context.getDescription())
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .build();
+        Transfer transfer = Transfer.start(
+                transferId,
+                context.getOriginAccountId(),
+                context.getDestinationAccountId(),
+                context.getAmount(),
+                context.getIdempotencyKey(),
+                context.getDescription()
+        );
         context.setPendingTransfer(transfer);
 
         try {
@@ -161,8 +157,7 @@ public class TransferSagaOrchestrator {
     }
 
     private void updateTransferStatus(Transfer transfer, TransferStatus status) {
-        transfer.setStatus(status);
-        transfer.setUpdatedAt(LocalDateTime.now());
-        transferRepository.save(transfer);
+        transfer.markAs(status);
+        transferPort.save(transfer);
     }
 }

@@ -1,8 +1,8 @@
 package com.personal.transfer.application.saga.steps;
 
+import com.personal.transfer.application.dto.BacenTransferEvent;
+import com.personal.transfer.application.ports.out.BacenEventPublisherPort;
 import com.personal.transfer.application.saga.SagaContext;
-import com.personal.transfer.infrastructure.sqs.BacenEventPublisher;
-import com.personal.transfer.infrastructure.sqs.BacenTransferEvent;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 class PublishBacenEventStepTest {
 
     @Mock
-    private BacenEventPublisher bacenEventPublisher;
+    private BacenEventPublisherPort bacenEventPublisher;
 
     @InjectMocks
     private PublishBacenEventStep publishBacenEventStep;
@@ -76,4 +76,3 @@ class PublishBacenEventStepTest {
         verifyNoInteractions(bacenEventPublisher);
     }
 }
-
