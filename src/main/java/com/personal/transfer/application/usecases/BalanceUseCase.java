@@ -3,6 +3,9 @@ package com.personal.transfer.application.usecases;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personal.transfer.domain.entities.Account;
+import com.personal.transfer.domain.exceptions.AccountInactiveException;
+import com.personal.transfer.infrastructure.adapters.CadastroApiPort;
+import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import com.personal.transfer.infrastructure.persistence.AccountRepository;
 import com.personal.transfer.infrastructure.redis.BalanceCacheRepository;
 import com.personal.transfer.infrastructure.redis.DailyLimitRepository;
@@ -14,7 +17,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Slf4j
 @Service
@@ -24,6 +26,7 @@ public class BalanceUseCase {
     private final AccountRepository accountRepository;
     private final BalanceCacheRepository balanceCacheRepository;
     private final DailyLimitRepository dailyLimitRepository;
+    private final CadastroApiPort cadastroApiPort;
     private final ObjectMapper objectMapper;
 
     @Value("${transfer.daily-limit:1000.00}")
@@ -44,11 +47,18 @@ public class BalanceUseCase {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new EntityNotFoundException("Account not found: " + accountId));
 
+        if (!account.isActive()) {
+            throw new AccountInactiveException(accountId);
+        }
+
+        CustomerResponse customer = cadastroApiPort.fetchCustomer(accountId);
+
         BigDecimal dailyLimitUsed = dailyLimitRepository.getAccumulated(accountId);
         BigDecimal dailyLimitRemaining = dailyLimit.subtract(dailyLimitUsed).max(BigDecimal.ZERO);
 
         BalanceResponse response = new BalanceResponse(
                 account.getId(),
+                customer.name(),
                 account.getBalance(),
                 dailyLimit,
                 dailyLimitUsed,

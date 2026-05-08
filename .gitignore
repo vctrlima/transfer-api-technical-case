@@ -1,8 +1,13 @@
-HELP.md
+### Common ###
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+
+### Secrets ###
+.env
+.env.*
+*.secret
 
 ### STS ###
 .apt_generated

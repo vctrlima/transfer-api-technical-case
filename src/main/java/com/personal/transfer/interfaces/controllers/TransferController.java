@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.personal.transfer.application.usecases.TransferUseCase;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.valueobjects.Money;
+import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import com.personal.transfer.infrastructure.redis.IdempotencyRepository;
 import com.personal.transfer.interfaces.dto.ErrorResponse;
 import com.personal.transfer.interfaces.dto.TransferRequest;
 import com.personal.transfer.interfaces.dto.TransferResponse;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 public class TransferController {
 
     private final TransferUseCase transferUseCase;
+    private final TransferRepository transferRepository;
     private final IdempotencyRepository idempotencyRepository;
     private final ObjectMapper objectMapper;
 
@@ -71,5 +74,22 @@ public class TransferController {
         }
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+    }
+
+    @GetMapping("/{transferId}")
+    public ResponseEntity<TransferResponse> getTransfer(@PathVariable String transferId) {
+        log.info("Transfer status query for transferId={}", transferId);
+        Transfer transfer = transferRepository.findById(transferId)
+                .orElseThrow(() -> new EntityNotFoundException("Transfer not found: " + transferId));
+
+        TransferResponse response = new TransferResponse(
+                transfer.getId(),
+                transfer.getStatus(),
+                transfer.getAmount(),
+                transfer.getOriginAccountId(),
+                transfer.getDestinationAccountId(),
+                transfer.getCreatedAt()
+        );
+        return ResponseEntity.ok(response);
     }
 }

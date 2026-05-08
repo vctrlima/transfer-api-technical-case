@@ -1,6 +1,9 @@
 {
   "mappings": [
     {
+      "scenarioName": "BACEN Rate Limit",
+      "requiredScenarioState": "Started",
+      "newScenarioState": "Rate Limited",
       "request": {
         "method": "POST",
         "url": "/notify"
@@ -11,6 +14,26 @@
           "Content-Type": "application/json"
         },
         "jsonBody": {}
+      }
+    },
+    {
+      "scenarioName": "BACEN Rate Limit",
+      "requiredScenarioState": "Rate Limited",
+      "newScenarioState": "Started",
+      "request": {
+        "method": "POST",
+        "url": "/notify"
+      },
+      "response": {
+        "status": 429,
+        "headers": {
+          "Content-Type": "application/json",
+          "Retry-After": "1"
+        },
+        "jsonBody": {
+          "error": "Too Many Requests",
+          "message": "Rate limit exceeded. Please retry after 1 second."
+        }
       }
     }
   ]

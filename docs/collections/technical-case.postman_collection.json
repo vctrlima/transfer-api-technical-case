@@ -642,6 +642,7 @@
                   "pm.test('Resposta contém todos os campos esperados', () => {",
                   "    const json = pm.response.json();",
                   "    pm.expect(json).to.have.property('accountId');",
+                  "    pm.expect(json).to.have.property('customerName');",
                   "    pm.expect(json).to.have.property('balance');",
                   "    pm.expect(json).to.have.property('availableLimit');",
                   "    pm.expect(json).to.have.property('dailyLimitUsed');",
@@ -672,7 +673,7 @@
                 "balance"
               ]
             },
-            "description": "Consulta o saldo e limites da conta `acc-origin-001` (ACTIVE, saldo R$1.500,00).\n\n**Retorna:**\n- `accountId`\n- `balance`\n- `availableLimit`\n- `dailyLimitUsed`\n- `dailyLimitRemaining`\n- `updatedAt`"
+            "description": "Consulta o saldo e limites da conta `acc-origin-001` (ACTIVE, saldo R$1.500,00).\n\n**Retorna:**\n- `accountId`\n- `customerName`\n- `balance`\n- `availableLimit`\n- `dailyLimitUsed`\n- `dailyLimitRemaining`\n- `updatedAt`"
           }
         },
         {
@@ -714,15 +715,20 @@
           }
         },
         {
-          "name": "✅ Consulta de saldo – conta inativa",
+          "name": "❌ Consulta de saldo – conta inativa",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 200 OK', () => {",
-                  "    pm.response.to.have.status(200);",
+                  "pm.test('Status 422 Unprocessable Entity', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Código de erro ACCOUNT_INACTIVE', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.code).to.eql('ACCOUNT_INACTIVE');",
                   "});"
                 ]
               }
@@ -743,7 +749,7 @@
                 "balance"
               ]
             },
-            "description": "Consulta o saldo de uma conta INACTIVE. A consulta de saldo deve ser permitida mesmo para contas inativas."
+            "description": "Deve retornar 422 ao consultar saldo de uma conta com status INACTIVE."
           }
         },
         {
@@ -777,6 +783,91 @@
               ]
             },
             "description": "Deve retornar erro ao consultar saldo de uma conta que não existe."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consulta de Transferência",
+      "description": "Endpoint para consultar o status de uma transferência pelo seu ID.",
+      "item": [
+        {
+          "name": "✅ Consultar transferência existente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Campos obrigatórios presentes', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('transferId');",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('amount');",
+                  "    pm.expect(json).to.have.property('originAccountId');",
+                  "    pm.expect(json).to.have.property('destinationAccountId');",
+                  "    pm.expect(json).to.have.property('createdAt');",
+                  "});",
+                  "",
+                  "pm.test('transferId bate com o solicitado', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.transferId).to.eql(pm.collectionVariables.get('lastTransferId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers/{{lastTransferId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers",
+                "{{lastTransferId}}"
+              ]
+            },
+            "description": "Consulta o status de uma transferência pelo ID.\n\n**Pré-requisito:** Execute '✅ Transferência válida' antes para popular a variável `lastTransferId`.\n\n**Retorna:**\n- `transferId`\n- `status` (PROCESSING | COMPLETED | FAILED)\n- `amount`\n- `originAccountId`\n- `destinationAccountId`\n- `createdAt`"
+          }
+        },
+        {
+          "name": "❌ Transferência não encontrada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 4xx', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([404, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/transfers/transfer-inexistente-999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "transfers",
+                "transfer-inexistente-999"
+              ]
+            },
+            "description": "Deve retornar erro quando o `transferId` não existir."
           }
         }
       ]

@@ -143,6 +143,7 @@ class TransferSagaOrchestratorTest {
         assertThat(result).isNotNull();
         assertThat(result.getOriginAccountId()).isEqualTo("acc-origin-001");
 
+        verify(publishBacenEventStep).execute(any());
         verify(executeTransferStep, never()).compensate(any());
         verify(validateLimitStep, never()).compensate(any());
     }
