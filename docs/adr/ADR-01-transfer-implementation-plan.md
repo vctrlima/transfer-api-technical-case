@@ -77,7 +77,7 @@ Tarefas:
 - Criar entidades `Account`, `Transfer` e enum `TransferStatus` (`PROCESSING`, `COMPLETED`, `FAILED`, `ROLLED_BACK`)
 - Criar value objects `Money` (com validação de precisão e valor positivo) e `IdempotencyKey`
 - Implementar exceções de domínio tipadas por regra de negócio
-- Escrever testes unitários para cada regra (RN-01 a RN-05)
+- Escrever testes unitários para cada regra de negócio
 
 Dependências: nenhuma.
 
@@ -92,7 +92,6 @@ Tarefas:
 - Configurar Redis com **Ministack** (substituto gratuito ao LocalStack para simular AWS ElastiCache localmente)
 - Implementar `IdempotencyRepository` — salvar e consultar `Idempotency-Key` com TTL de 24h
 - Implementar `DailyLimitRepository` — operação atômica com `INCRBY` e TTL de 48h na chave `limit::{accountId}::{date}`
-- Escrever testes de integração com Testcontainers (Redis container)
 
 Dependências: Fase 1.
 
@@ -107,7 +106,6 @@ Tarefas:
 - Definir interfaces `CadastroApiPort` e `BacenApiPort`
 - Implementar `CadastroApiAdapter` com **Resilience4j** (Circuit Breaker + Retry com backoff exponencial)
 - Implementar `BacenApiAdapter` com tratamento explícito de HTTP 429 (não fazer retry imediato — o SQS cuidará disso)
-- Criar mocks WireMock para ambas as APIs nos testes
 - Configurar **Ministack** para simular o SQS localmente
 
 Dependências: Fase 1.
@@ -124,7 +122,6 @@ Tarefas:
 - Cada `Step` deve implementar `execute()` e `compensate()`
 - O orquestrador persiste o estado da SAGA a cada etapa (para rastreabilidade e auditoria)
 - Implementar compensação de débito/crédito caso a publicação no SQS falhe
-- Escrever testes de integração cobrindo os cenários de falha em cada etapa
 
 Dependências: Fases 2 e 3.
 
@@ -140,7 +137,6 @@ Tarefas:
 - Configurar retry com backoff exponencial para respostas 429
 - Configurar Dead Letter Queue (DLQ) para eventos que esgotaram os retries — com alarme de monitoramento
 - Garantir idempotência no consumer (o mesmo evento pode ser entregue mais de uma vez pelo SQS)
-- Escrever testes com WireMock simulando 429 e posterior sucesso
 
 Dependências: Fase 4.
 
@@ -156,7 +152,6 @@ Tarefas:
 - Implementar `GlobalExceptionHandler` com `@RestControllerAdvice` mapeando cada exceção de domínio para o código HTTP
   correto
 - Validar `Idempotency-Key` no nível do controller (header obrigatório)
-- Escrever testes de integração do controller com MockMvc
 
 Dependências: Fase 4.
 
