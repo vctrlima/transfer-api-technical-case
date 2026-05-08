@@ -48,7 +48,15 @@ mvn spring-boot:run
 ### 3. Rodar os testes
 
 ```bash
+# Executar sem o relatório de cobertura
 mvn test
+```
+
+```bash
+# Executar com relatório de cobertura (JaCoCo)
+# Relatório gerado em: target/site/jacoco/index.html
+# Requisito mínimo configurado: 80% de cobertura de linhas nos pacotes application.* e domain.*.
+mvn verify
 ```
 
 ---

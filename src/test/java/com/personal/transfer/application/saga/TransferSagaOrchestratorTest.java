@@ -3,6 +3,8 @@ package com.personal.transfer.application.saga;
 import com.personal.transfer.application.saga.steps.*;
 import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
+import com.personal.transfer.domain.exceptions.AccountInactiveException;
+import com.personal.transfer.domain.exceptions.DailyLimitExceededException;
 import com.personal.transfer.domain.exceptions.ExternalServiceException;
 import com.personal.transfer.infrastructure.persistence.TransferRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -146,5 +148,62 @@ class TransferSagaOrchestratorTest {
         verify(publishBacenEventStep).execute(any());
         verify(executeTransferStep, never()).compensate(any());
         verify(validateLimitStep, never()).compensate(any());
+    }
+
+    @Test
+    @DisplayName("falha na Etapa 1 (ValidateAccount) → propagar exceção, nenhum outro step executado")
+    void givenValidateAccountFails_whenExecute_thenThrowsAndNoOtherStepRuns() {
+        doThrow(new AccountInactiveException("acc-origin-001"))
+                .when(validateAccountStep).execute(any());
+
+        assertThatThrownBy(() -> orchestrator.execute(context))
+                .isInstanceOf(AccountInactiveException.class)
+                .hasMessageContaining("acc-origin-001");
+
+        verifyNoInteractions(validateLimitStep, fetchCustomerStep, executeTransferStep, publishBacenEventStep);
+    }
+
+    @Test
+    @DisplayName("falha na Etapa 2 (ValidateLimit) → propagar DailyLimitExceededException, FetchCustomer cancelado")
+    void givenValidateLimitFails_whenExecute_thenThrowsDailyLimitExceptionAndNoCompensation() {
+        doNothing().when(validateAccountStep).execute(any());
+        doThrow(new DailyLimitExceededException(
+                new java.math.BigDecimal("900.00"),
+                new java.math.BigDecimal("200.00"),
+                new java.math.BigDecimal("1000.00")))
+                .when(validateLimitStep).execute(any());
+        lenient().doNothing().when(fetchCustomerStep).execute(any());
+
+        assertThatThrownBy(() -> orchestrator.execute(context))
+                .isInstanceOf(DailyLimitExceededException.class);
+
+        verify(validateLimitStep, never()).compensate(any());
+        verifyNoInteractions(executeTransferStep, publishBacenEventStep);
+    }
+
+    @Test
+    @DisplayName("falha na Etapa 4 (ExecuteTransfer) após débito → compensações disparadas, status = FAILED")
+    void givenExecuteTransferFailsAfterDebit_whenExecute_thenCompensatesAndMarksFailed() {
+        doNothing().when(validateAccountStep).execute(any());
+        doNothing().when(validateLimitStep).execute(any());
+        doNothing().when(fetchCustomerStep).execute(any());
+
+        doAnswer(inv -> {
+            SagaContext ctx = inv.getArgument(0);
+            ctx.setTransferExecuted(true);
+            throw new RuntimeException("DB error after debit");
+        }).when(executeTransferStep).execute(any());
+
+        assertThatThrownBy(() -> orchestrator.execute(context))
+                .isInstanceOf(ExternalServiceException.class);
+
+        verify(executeTransferStep).compensate(any());
+        verify(validateLimitStep).compensate(any());
+
+        ArgumentCaptor<Transfer> transferCaptor = ArgumentCaptor.forClass(Transfer.class);
+        verify(transferRepository, atLeastOnce()).save(transferCaptor.capture());
+
+        assertThat(transferCaptor.getAllValues())
+                .anyMatch(t -> TransferStatus.FAILED.equals(t.getStatus()));
     }
 }

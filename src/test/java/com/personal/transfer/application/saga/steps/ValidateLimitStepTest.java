@@ -16,7 +16,6 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,6 +100,17 @@ class ValidateLimitStepTest {
 
         assertThatThrownBy(() -> validateLimitStep.execute(buildContext(amount)))
                 .isInstanceOf(DailyLimitExceededException.class);
+
+        verify(dailyLimitRepository).decrement(eq("acc-001"), eq(amount));
+    }
+
+    @Test
+    @DisplayName("compensate → decrementa o valor no Redis para reverter o incremento")
+    void givenContext_whenCompensate_thenDecrementsRedisCounter() {
+        BigDecimal amount = new BigDecimal("300.00");
+        SagaContext context = buildContext(amount);
+
+        assertThatCode(() -> validateLimitStep.compensate(context)).doesNotThrowAnyException();
 
         verify(dailyLimitRepository).decrement(eq("acc-001"), eq(amount));
     }

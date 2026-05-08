@@ -175,4 +175,17 @@ class ValidateAccountStepTest {
                     .isInstanceOf(InsufficientBalanceException.class);
         }
     }
+
+    @Nested
+    @DisplayName("compensate()")
+    class CompensateValidation {
+
+        @Test
+        @DisplayName("compensate → operação no-op, nenhuma interação com o repositório")
+        void whenCompensate_thenNoInteractionWithRepository() {
+            assertThatCode(() -> validateAccountStep.compensate(context)).doesNotThrowAnyException();
+
+            org.mockito.Mockito.verifyNoInteractions(accountRepository);
+        }
+    }
 }
