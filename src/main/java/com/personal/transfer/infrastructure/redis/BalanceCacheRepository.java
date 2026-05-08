@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Repository
@@ -27,7 +28,15 @@ public class BalanceCacheRepository {
         return Optional.ofNullable(redisTemplate.opsForValue().get(KEY_PREFIX + accountId));
     }
 
-    public void evict(String accountId) {
-        redisTemplate.delete(KEY_PREFIX + accountId);
+    /**
+     * Evicts multiple cache entries in a single DEL command (one Redis round-trip).
+     */
+    public void evictAll(String... accountIds) {
+        Set<String> keys = new java.util.HashSet<>();
+        for (String id : accountIds) {
+            keys.add(KEY_PREFIX + id);
+        }
+        redisTemplate.delete(keys);
+        log.debug("Balance cache evicted for accounts={}", (Object) accountIds);
     }
 }

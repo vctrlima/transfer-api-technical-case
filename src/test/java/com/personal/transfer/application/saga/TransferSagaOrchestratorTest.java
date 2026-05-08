@@ -15,7 +15,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,19 +27,14 @@ class TransferSagaOrchestratorTest {
 
     @Mock
     private FetchCustomerStep fetchCustomerStep;
-
     @Mock
     private ValidateAccountStep validateAccountStep;
-
     @Mock
     private ValidateLimitStep validateLimitStep;
-
     @Mock
     private ExecuteTransferStep executeTransferStep;
-
     @Mock
     private PublishBacenEventStep publishBacenEventStep;
-
     @Mock
     private TransferRepository transferRepository;
 
@@ -58,7 +52,7 @@ class TransferSagaOrchestratorTest {
                 .idempotencyKey("idem-key-001")
                 .build();
 
-        when(transferRepository.save(any(Transfer.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(transferRepository.save(any(Transfer.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test

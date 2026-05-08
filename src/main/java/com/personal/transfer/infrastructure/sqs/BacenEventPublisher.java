@@ -27,8 +27,6 @@ public class BacenEventPublisher {
             SendMessageRequest request = SendMessageRequest.builder()
                     .queueUrl(queueUrl)
                     .messageBody(messageBody)
-                    .messageGroupId("transfer-" + event.transferId())
-                    .messageDeduplicationId(event.transferId())
                     .build();
 
             sqsClient.sendMessage(request);

@@ -2,13 +2,16 @@ package com.personal.transfer.infrastructure.redis;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.List;
 
 @Slf4j
 @Repository
@@ -22,14 +25,23 @@ public class DailyLimitRepository {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * Atomically increments the daily limit counter.
+     * Atomically increments the daily limit counter and refreshes TTL.
+     * Uses a Redis pipeline to send INCRBY + EXPIRE in a single round-trip
+     * instead of two sequential commands.
      * Returns the new accumulated value in full currency units (e.g., BRL).
      */
     public BigDecimal incrementAndGet(String accountId, BigDecimal amount) {
         String key = buildKey(accountId);
         long amountInCents = toCents(amount);
-        Long newValueInCents = redisTemplate.opsForValue().increment(key, amountInCents);
-        redisTemplate.expire(key, TTL);
+
+        List<Object> results = redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+            byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+            connection.stringCommands().incrBy(keyBytes, amountInCents);
+            connection.keyCommands().expire(keyBytes, TTL.getSeconds());
+            return null;
+        });
+
+        Long newValueInCents = (Long) results.get(0);
         log.debug("Daily limit incremented for accountId={}, newTotal={} cents", accountId, newValueInCents);
         return fromCents(newValueInCents);
     }

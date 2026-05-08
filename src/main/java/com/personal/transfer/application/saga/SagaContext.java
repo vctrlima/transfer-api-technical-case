@@ -1,5 +1,6 @@
 package com.personal.transfer.application.saga;
 
+import com.personal.transfer.domain.entities.Transfer;
 import com.personal.transfer.domain.entities.TransferStatus;
 import com.personal.transfer.infrastructure.adapters.dto.CustomerResponse;
 import lombok.Builder;
@@ -20,6 +21,7 @@ public class SagaContext {
 
     private CustomerResponse customer;
     private boolean transferExecuted;
+    private Transfer pendingTransfer;
 
     @Builder.Default
     private TransferStatus sagaStatus = TransferStatus.PROCESSING;

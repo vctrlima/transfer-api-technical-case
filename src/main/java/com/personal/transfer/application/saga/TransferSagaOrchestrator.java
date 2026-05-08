@@ -11,6 +11,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
@@ -25,16 +29,20 @@ public class TransferSagaOrchestrator {
     private final TransferRepository transferRepository;
 
     /**
-     * Executes the SAGA with the following steps:
-     * 1. ValidateAccount   — validates account status and balance (local DB)
-     * 2. ValidateLimit     — validates daily limit via Redis INCRBY (atomic)
-     * 3. FetchCustomer     — reads customer from Cadastro API
-     * 4. ExecuteTransfer   — debits origin, credits destination
-     * 5. PublishBacenEvent — publishes event to SQS
-     * Compensations on failure:
-     * - Step 5 fails → compensate Step 4 (rollback debit/credit) + Step 2 (Redis DECRBY)
-     * - Step 4 fails before debit → no compensation
-     * - Steps 1/2/3 fail → no compensation (nothing changed)
+     * Virtual-thread executor for parallel steps 2+3.
+     * Virtual threads are cheap — no platform thread is blocked during I/O waits.
+     */
+    private static final Executor VIRTUAL_EXECUTOR =
+            Executors.newVirtualThreadPerTaskExecutor();
+
+    /**
+     * Executes the SAGA:
+     * 1. ValidateAccount    — batch DB read, fail-fast pre-check (no lock, no Transfer record yet)
+     * 2. ValidateLimit  ┐   — Redis pipeline INCRBY+EXPIRE
+     * 3. FetchCustomer  ┘   — HTTP to Cadastro API (cached in Redis)
+     * 4. [Persist Transfer] — DB INSERT only after all validations pass; rejected requests produce ZERO DB writes
+     * 5. ExecuteTransfer    — single batch SELECT FOR UPDATE + saveAll
+     * 6. PublishBacenEvent  — sync SQS; on failure rollbacks step 5 + step 2
      */
     public Transfer execute(SagaContext context) {
         String transferId = UUID.randomUUID().toString();
@@ -42,6 +50,62 @@ public class TransferSagaOrchestrator {
 
         log.info("[SAGA] Iniciando para transferId={}, origin={}, destination={}, amount={}",
                 transferId, context.getOriginAccountId(), context.getDestinationAccountId(), context.getAmount());
+
+        try {
+            validateAccountStep.execute(context);
+        } catch (Exception e) {
+            log.error("[SAGA][Step1:ValidateAccount] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
+            throw e;
+        }
+
+        CompletableFuture<Void> limitFuture = CompletableFuture.runAsync(
+                () -> validateLimitStep.execute(context), VIRTUAL_EXECUTOR);
+
+        CompletableFuture<Void> customerFuture = CompletableFuture.runAsync(
+                () -> fetchCustomerStep.execute(context), VIRTUAL_EXECUTOR);
+
+        try {
+            CompletableFuture.allOf(limitFuture, customerFuture).join();
+        } catch (CompletionException ce) {
+            boolean limitSucceeded;
+            Throwable limitError = null;
+            try {
+                limitFuture.join();
+                limitSucceeded = true;
+            } catch (CompletionException | java.util.concurrent.CancellationException le) {
+                limitSucceeded = false;
+                limitError = (le instanceof CompletionException cle) ? cle.getCause() : le;
+            }
+
+            Throwable customerError = null;
+            if (customerFuture.isCompletedExceptionally()) {
+                try {
+                    customerFuture.join();
+                } catch (CompletionException cle) {
+                    customerError = cle.getCause();
+                }
+            }
+
+            if (limitSucceeded && customerError != null) {
+                log.error("[SAGA][Step3:FetchCustomer] Falha — compensando limite Redis. transferId={}", transferId);
+                try {
+                    validateLimitStep.compensate(context);
+                } catch (Exception ce2) {
+                    log.error("[SAGA][Compensate][Step2] Falha. transferId={}: {}", transferId, ce2.getMessage());
+                }
+                if (customerError instanceof ExternalServiceException ese) throw ese;
+                throw new ExternalServiceException("Cadastro API error: " + customerError.getMessage(), customerError);
+            }
+            if (!limitSucceeded && limitError != null) {
+                log.error("[SAGA][Step2:ValidateLimit] Falha de validação. transferId={}", transferId);
+                customerFuture.cancel(true);
+                if (limitError instanceof RuntimeException re) throw re;
+                throw new ExternalServiceException("Limit validation error: " + limitError.getMessage(), limitError);
+            }
+            Throwable cause = ce.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            throw new ExternalServiceException("Parallel step error: " + cause.getMessage(), cause);
+        }
 
         Transfer transfer = Transfer.builder()
                 .id(transferId)
@@ -54,32 +118,7 @@ public class TransferSagaOrchestrator {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
-        transferRepository.save(transfer);
-
-        try {
-            validateAccountStep.execute(context);
-        } catch (Exception e) {
-            log.error("[SAGA][Step1:ValidateAccount] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
-            updateTransferStatus(transfer, TransferStatus.FAILED);
-            throw e;
-        }
-
-        try {
-            validateLimitStep.execute(context);
-        } catch (Exception e) {
-            log.error("[SAGA][Step2:ValidateLimit] Falha de validação. transferId={}, erro={}", transferId, e.getMessage());
-            updateTransferStatus(transfer, TransferStatus.FAILED);
-            throw e;
-        }
-
-        try {
-            fetchCustomerStep.execute(context);
-        } catch (ExternalServiceException e) {
-            log.error("[SAGA][Step3:FetchCustomer] Falha — retornando 502. transferId={}, erro={}", transferId, e.getMessage());
-            validateLimitStep.compensate(context);
-            updateTransferStatus(transfer, TransferStatus.FAILED);
-            throw e;
-        }
+        context.setPendingTransfer(transfer);
 
         try {
             executeTransferStep.execute(context);
@@ -103,7 +142,6 @@ public class TransferSagaOrchestrator {
             throw new ExternalServiceException("Failed to publish BACEN event, transfer rolled back: " + e.getMessage(), e);
         }
 
-        updateTransferStatus(transfer, TransferStatus.PROCESSING);
         context.setSagaStatus(TransferStatus.PROCESSING);
         log.info("[SAGA] Concluído com sucesso transferId={}", transferId);
         return transfer;
@@ -128,4 +166,3 @@ public class TransferSagaOrchestrator {
         transferRepository.save(transfer);
     }
 }
-

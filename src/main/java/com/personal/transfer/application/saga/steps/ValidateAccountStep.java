@@ -11,6 +11,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -22,9 +27,16 @@ public class ValidateAccountStep implements SagaStep<SagaContext> {
     public void execute(SagaContext context) {
         log.info("[SAGA][Step2:ValidateAccount] Iniciando para transferId={}", context.getTransferId());
 
-        Account origin = accountRepository
-                .findById(context.getOriginAccountId())
-                .orElseThrow(() -> new EntityNotFoundException("Origin account not found: " + context.getOriginAccountId()));
+        List<Account> accounts = accountRepository.findAllByIds(
+                List.of(context.getOriginAccountId(), context.getDestinationAccountId()));
+
+        Map<String, Account> byId = accounts.stream()
+                .collect(Collectors.toMap(Account::getId, Function.identity()));
+
+        Account origin = byId.get(context.getOriginAccountId());
+        if (origin == null) {
+            throw new EntityNotFoundException("Origin account not found: " + context.getOriginAccountId());
+        }
 
         if (!origin.isActive()) {
             throw new AccountInactiveException(context.getOriginAccountId());
@@ -34,9 +46,10 @@ public class ValidateAccountStep implements SagaStep<SagaContext> {
             throw new InsufficientBalanceException(origin.getBalance(), context.getAmount());
         }
 
-        Account destination = accountRepository
-                .findById(context.getDestinationAccountId())
-                .orElseThrow(() -> new EntityNotFoundException("Destination account not found: " + context.getDestinationAccountId()));
+        Account destination = byId.get(context.getDestinationAccountId());
+        if (destination == null) {
+            throw new EntityNotFoundException("Destination account not found: " + context.getDestinationAccountId());
+        }
 
         if (!destination.isActive()) {
             throw new AccountInactiveException(context.getDestinationAccountId());
