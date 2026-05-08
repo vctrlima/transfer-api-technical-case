@@ -48,11 +48,7 @@ mvn spring-boot:run
 ### 3. Rodar os testes
 
 ```bash
-# Todos os testes (unitários + integração via Testcontainers)
-mvn verify
-
-# Apenas testes unitários (rápidos, sem Docker)
-mvn test -Dgroups="unitario"
+mvn test
 ```
 
 ---
