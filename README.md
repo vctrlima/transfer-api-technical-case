@@ -1,4 +1,4 @@
-# Transfer API — Desafio Técnico Itaú
+# Transfer API — Desafio Técnico
 
 API REST para **Consulta de Saldo** e **Transferência entre Contas**, desenvolvida em Java 21 + Spring Boot 3.3.2.
 
